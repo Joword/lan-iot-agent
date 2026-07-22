@@ -1,0 +1,136 @@
+# LanIoT Agent — Docker Compose (P1 — HA device layer)
+#
+# Compose lives under deploy/docker/; app sources are under apps/.
+# Build contexts point at ../../apps/<service>; Dockerfiles stay here.
+#
+# Hub ⇄ Agent: no hard depends_on between them — both must tolerate the other
+# not being ready (retry / delayed connect; health checks are self-only).
+#
+# Copy `.env.example` → `.env` and set HA_TOKEN before bringing Hub devices online.
+
+services:
+  hub:
+    build:
+      context: ../../apps/hub
+      dockerfile: ../../deploy/docker/hub/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      HA_URL: http://homeassistant:8123
+      HA_TOKEN: ${HA_TOKEN:-}
+      AGENT_URL: ${AGENT_URL:-http://agent:8000}
+      AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-lan_iot}
+      RUST_LOG: lan_iot_hub=info,tower_http=info
+    volumes:
+      - ../../config/hub.toml:/etc/lan-iot/hub.toml:ro
+    depends_on:
+      - mosquitto
+      - homeassistant
+      - mongo
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: ../../apps/agent
+      dockerfile: ../../deploy/docker/agent/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      HUB_MCP_URL: ${HUB_MCP_URL:-http://hub:3000/mcp}
+      HUB_URL: ${HUB_URL:-http://hub:3000}
+    volumes:
+      - ../../config/agent.toml:/etc/lan-iot/agent.toml:ro
+      - ../../config/llm.toml:/etc/lan-iot/llm.toml:ro
+    # Intentionally NOT depends_on: hub — circular readiness must be soft.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ../../apps/ui
+      dockerfile: ../../deploy/docker/ui/Dockerfile
+      args:
+        # Browser calls Hub/Agent on host-mapped ports (not Docker DNS).
+        NEXT_PUBLIC_HUB_URL: http://localhost:3000
+        NEXT_PUBLIC_AGENT_URL: http://localhost:8000
+    ports:
+      - "3001:3000"
+    environment:
+      HUB_URL: http://localhost:3000
+      NEXT_PUBLIC_HUB_URL: http://localhost:3000
+      AGENT_URL: http://localhost:8000
+      NEXT_PUBLIC_AGENT_URL: http://localhost:8000
+    depends_on:
+      - hub
+    restart: unless-stopped
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./homeassistant:/config
+    environment:
+      TZ: ${TZ:-UTC}
+    # Resolve broker by Compose service name `mosquitto` (see HA UI MQTT setup).
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    profiles:
+      - llm
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  mongo-data:

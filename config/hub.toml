@@ -1,0 +1,30 @@
+# LanIoT Hub configuration
+
+[hub]
+bind = "0.0.0.0"
+port = 3000
+# REST poll interval when HA WebSocket is unavailable (seconds).
+registry_poll_secs = 30
+
+[ha]
+# Override with HA_URL / HA_TOKEN env vars (recommended in Docker).
+url = "http://homeassistant:8123"
+# Long-lived access token from HA profile → Security.
+# Leave empty for local stub; Hub still starts and returns empty device lists.
+token = ""
+
+[agent]
+# Hub forwards WebSocket `agent:message` frames here (POST /v1/chat).
+# Override with AGENT_URL.
+url = "http://agent:8000"
+
+[mongodb]
+# Pairing codes + bearer tokens. Override with MONGODB_URI / MONGODB_DATABASE.
+uri = "mongodb://mongo:27017"
+database = "lan_iot"
+
+[mqtt]
+# Broker is used by Home Assistant for ESP32 — Hub does not own this path.
+# Kept for future observability / optional sync only.
+broker = "mosquitto"
+port = 1883

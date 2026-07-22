@@ -1,0 +1,5 @@
+# Prefer the GNU toolchain on Windows when MSVC `link.exe` is missing.
+# (rust-analyzer / cargo check cascade into dozens of false errors without a linker.)
+# Override locally with: cargo +stable-x86_64-pc-windows-msvc check
+[build]
+target = "x86_64-pc-windows-gnu"

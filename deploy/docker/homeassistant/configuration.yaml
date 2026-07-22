@@ -1,0 +1,50 @@
+# Home Assistant — LanIoT Agent
+#
+# Device paths (source of truth: docs/ARCHITECTURE.md):
+#   Brand IoT  → HA integrations (xiaomi_miot / xiaomi_miio / gree / …)
+#   ESP32      → HA MQTT (broker = Compose service `mosquitto`)
+#   Companion  → Hub HTTP only (not configured here)
+#
+# P4: multi-brand demo entities live in mqtt.yaml (ESP32 light + fake Gree climate).
+# New brand = HA config only — see docs/P4_MULTI_BRAND.md.
+#
+# IMPORTANT — MQTT broker connection (HA 2022.9+):
+#   Broker host/port are configured in the HA UI, not (reliably) via YAML:
+#     Settings → Devices & services → Add integration → MQTT
+#     Broker: mosquitto
+#     Port:   1883
+#     (anonymous OK with deploy/docker/mosquitto/mosquitto.conf)
+#
+#   Entity definitions below load after the MQTT integration is connected.
+
+default_config:
+
+http:
+  server_port: 8123
+
+# Manual MQTT entities (demo ESP32 light + fake Gree climate — no hardware).
+# Publish sample state with publish_demo_states.ps1 / .sh (see README).
+mqtt: !include mqtt.yaml
+
+logger:
+  default: info
+  logs:
+    homeassistant.components.mqtt: info
+
+# --- Brand IoT (real devices) -----------------------------------------------
+# Do NOT enable these until you have credentials / HACS set up.
+#
+# Xiaomi (recommended for demo with real gear):
+#   1. Install HACS → search "Xiaomi Miot Auto" (custom integration `xiaomi_miot`)
+#      https://github.com/al-one/hass-xiaomi-miot
+#   2. Or use core integration `Xiaomi Miio` for supported miIO devices
+#   3. Add integration in UI → devices appear as HA entities
+#   4. Hub syncs them via REST/WS — no Hub code change per brand
+#
+# Gree (real AC):
+#   Prefer HA `gree` integration over the MQTT fake in mqtt.yaml.
+#   Same Hub path once climate.* entities exist.
+#
+# Example (commented — enable only after HACS + integration exist):
+# xiaomi_miot:
+#   # Prefer UI config; YAML varies by integration version.

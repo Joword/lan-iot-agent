@@ -1,0 +1,43 @@
+{
+  "include": [
+    "apps/agent/src",
+    "apps/agent/tests",
+    "apps/agent/scripts",
+    "companions/windows"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/.venv",
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/target",
+    "**/site-packages",
+    "apps/ui"
+  ],
+  "venvPath": "apps/agent",
+  "venv": ".venv",
+  "extraPaths": ["apps/agent/src"],
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "standard",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none",
+  "reportAny": "none",
+  "reportExplicitAny": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownParameterType": "none",
+  "reportMissingParameterType": "none",
+  "reportMissingTypeStubs": "none",
+  "reportMissingTypeArgument": "none",
+  "reportUnnecessaryIsInstance": "none",
+  "reportUnnecessaryComparison": "none",
+  "reportImplicitStringConcatenation": "none",
+  "reportUninitializedInstanceVariable": "none",
+  "reportUnannotatedClassAttribute": "none",
+  "reportUnusedCallResult": "none",
+  "reportConstantRedefinition": "none",
+  "reportIgnoreCommentWithoutRule": "none",
+  "reportUnnecessaryTypeIgnoreComment": "none"
+}

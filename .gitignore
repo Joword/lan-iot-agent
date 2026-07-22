@@ -1,0 +1,53 @@
+# Dependencies / build
+node_modules/
+.next/
+target/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.vscode/
+docs/
+
+# Env / secrets
+.env
+.env*.local
+*.pem
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs / local data
+*.log
+ollama-data/
+
+# Docs: keep only repo-root README.md
+**/README.md
+!/README.md
+**/README
+!/README
+**/readme.md
+!/readme.md
+
+# Singularity / Apptainer (P7) — track only deploy.sh
+deploy/singularity/**
+deploy/singularity/*.def
+!deploy/singularity/deploy.sh
+
+# Next / TS
+next-env.d.ts
+*.tsbuildinfo
+
+# Cargo
+apps/hub/target/
+target/

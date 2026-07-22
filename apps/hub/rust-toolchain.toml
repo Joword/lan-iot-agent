@@ -1,0 +1,5 @@
+# Use GNU host on Windows so cargo/rust-analyzer work without MSVC link.exe.
+# Machines with VS Build Tools can still: rustup override unset
+[toolchain]
+channel = "stable-x86_64-pc-windows-gnu"
+components = ["rustfmt", "clippy", "rust-analyzer"]

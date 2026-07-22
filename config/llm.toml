@@ -1,0 +1,32 @@
+# LLM routing — LiteLLM (local Ollama ⇌ cloud fallback)
+# Env overrides (also documented in apps/agent/README.md):
+#   LLM_PROVIDER       ollama | openai | anthropic
+#   LLM_MODEL          e.g. qwen2.5:7b / gpt-4o-mini
+#   OLLAMA_URL         e.g. http://127.0.0.1:11434
+#   OPENAI_API_KEY     cloud OpenAI (fallback or primary)
+#   ANTHROPIC_API_KEY  cloud Anthropic
+#   LLM_FALLBACK_PROVIDER / LLM_FALLBACK_MODEL
+#   LLM_MAX_TOOL_ITERATIONS  max LLM↔MCP rounds (default 5)
+
+[llm]
+provider = "ollama"           # ollama | openai | anthropic
+model = "qwen2.5:7b"
+fallback_provider = "openai"
+fallback_model = "gpt-4o-mini"
+# Max tokens for chat completions (stub-friendly default).
+max_tokens = 1024
+temperature = 0.3
+# Max tool-calling rounds (LLM tool_calls → Hub MCP → LLM) per chat turn.
+max_tool_iterations = 5
+
+[ollama]
+# Docker Compose service; override with OLLAMA_URL (e.g. http://127.0.0.1:11434).
+base_url = "http://ollama:11434"
+
+[openai]
+# API key via OPENAI_API_KEY env — do not commit secrets.
+base_url = "https://api.openai.com/v1"
+
+[anthropic]
+# API key via ANTHROPIC_API_KEY env — do not commit secrets.
+base_url = "https://api.anthropic.com"

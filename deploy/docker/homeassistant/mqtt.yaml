@@ -1,0 +1,221 @@
+# MQTT entities for LanIoT Agent demos (via HA — not Hub-direct).
+
+#
+
+# Topic convention (docs/DEVELOPMENT.md §9):
+
+#   home/{room}/{device_id}/state
+
+#   home/{room}/{device_id}/set
+
+#   home/{room}/{device_id}/availability
+
+#
+
+# P4 multi-brand (all marked [faker] until real HA integrations replace them):
+
+#   ESP32 light / sensor  — self-built MQTT
+
+#   Gree climate          — stand-in for HA `gree`
+
+#   Xiaomi bulb + plug    — stand-in for `xiaomi_miot` / `xiaomi_miio`
+
+#
+
+# Swap path: enable real brand integration in HA → new entity_ids appear in Hub.
+
+# Delete or disable the matching MQTT faker block below. Hub core stays unchanged.
+
+# See docs/P4_MULTI_BRAND.md.
+
+#
+
+# Requires MQTT integration connected to broker host `mosquitto:1883`.
+
+
+
+light:
+
+  - name: "ESP32 Light [faker]"
+
+    unique_id: lan_iot_demo_esp32_light
+
+    object_id: demo_esp32_light
+
+    schema: json
+
+    state_topic: "home/demo/esp32_light/state"
+
+    command_topic: "home/demo/esp32_light/set"
+
+    availability:
+
+      - topic: "home/demo/esp32_light/availability"
+
+    payload_available: "online"
+
+    payload_not_available: "offline"
+
+    brightness: true
+
+    qos: 0
+
+    optimistic: false
+
+    # JSON payloads (HA mqtt light schema:json):
+
+    #   state → {"state":"ON","brightness":128}
+
+    #   set   ← {"state":"OFF"} or {"state":"ON","brightness":200}
+
+
+
+  # Faker Xiaomi bulb — replace with xiaomi_miot light entity later.
+
+  - name: "Xiaomi Bulb [faker]"
+
+    unique_id: lan_iot_faker_xiaomi_bulb
+
+    object_id: faker_xiaomi_bulb
+
+    schema: json
+
+    state_topic: "home/faker/xiaomi_bulb/state"
+
+    command_topic: "home/faker/xiaomi_bulb/set"
+
+    availability:
+
+      - topic: "home/faker/xiaomi_bulb/availability"
+
+    payload_available: "online"
+
+    payload_not_available: "offline"
+
+    brightness: true
+
+    qos: 0
+
+    optimistic: false
+
+
+
+# Fake Gree AC — second brand / climate domain via MQTT (no real Gree cloud).
+
+# Entity: climate.demo_gree_ac  — replace with HA `gree` integration later.
+
+climate:
+
+  - name: "Gree AC [faker]"
+
+    unique_id: lan_iot_demo_gree_ac
+
+    object_id: demo_gree_ac
+
+    modes:
+
+      - "off"
+
+      - "auto"
+
+      - "cool"
+
+      - "heat"
+
+      - "dry"
+
+      - "fan_only"
+
+    mode_command_topic: "home/demo/gree_ac/mode/set"
+
+    mode_state_topic: "home/demo/gree_ac/mode/state"
+
+    temperature_command_topic: "home/demo/gree_ac/temp/set"
+
+    temperature_state_topic: "home/demo/gree_ac/temp/state"
+
+    current_temperature_topic: "home/demo/gree_ac/current_temp"
+
+    min_temp: 16
+
+    max_temp: 30
+
+    temp_step: 1
+
+    precision: 1.0
+
+    availability:
+
+      - topic: "home/demo/gree_ac/availability"
+
+    payload_available: "online"
+
+    payload_not_available: "offline"
+
+    qos: 0
+
+
+
+switch:
+
+  # Faker Xiaomi plug — replace with xiaomi_miot switch/outlet entity later.
+
+  - name: "Xiaomi Plug [faker]"
+
+    unique_id: lan_iot_faker_xiaomi_plug
+
+    object_id: faker_xiaomi_plug
+
+    state_topic: "home/faker/xiaomi_plug/state"
+
+    command_topic: "home/faker/xiaomi_plug/set"
+
+    availability:
+
+      - topic: "home/faker/xiaomi_plug/availability"
+
+    payload_available: "online"
+
+    payload_not_available: "offline"
+
+    payload_on: "ON"
+
+    payload_off: "OFF"
+
+    state_on: "ON"
+
+    state_off: "OFF"
+
+    qos: 0
+
+
+
+sensor:
+
+  - name: "ESP32 Temperature [faker]"
+
+    unique_id: lan_iot_demo_esp32_temp
+
+    object_id: demo_esp32_temperature
+
+    state_topic: "home/demo/esp32_sensor/state"
+
+    availability:
+
+      - topic: "home/demo/esp32_sensor/availability"
+
+    payload_available: "online"
+
+    payload_not_available: "offline"
+
+    unit_of_measurement: "°C"
+
+    device_class: temperature
+
+    value_template: "{{ value_json.temperature }}"
+
+    # Example publish:
+
+    #   {"temperature": 26.5}
+
+

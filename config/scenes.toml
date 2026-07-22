@@ -1,0 +1,48 @@
+# LanIoT Hub — multi-brand faker scenes (P4/P5)
+# Loaded at Hub startup; missing entities are skipped (no-op) when a scene runs.
+# Override path with SCENES_CONFIG.
+# Swap path: replace entity_ids with real HA entities when hardware is paired.
+
+[[scenes]]
+id = "sleep_mode"
+name = "Sleep Mode"
+description = "Multi-brand bedtime: ESP32 + Xiaomi lights off, Gree AC off [faker]"
+
+[[scenes.actions]]
+entity_id = "light.demo_esp32_light"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "light.faker_xiaomi_bulb"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "switch.faker_xiaomi_plug"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "climate.demo_gree_ac"
+action = "set_hvac_mode"
+params = { hvac_mode = "off" }
+
+[[scenes]]
+id = "away_mode"
+name = "Away Mode"
+description = "Leaving home: turn off lights/plug and set Gree cool 26°C [faker]"
+
+[[scenes.actions]]
+entity_id = "light.demo_esp32_light"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "light.faker_xiaomi_bulb"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "switch.faker_xiaomi_plug"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "climate.demo_gree_ac"
+action = "set_temperature"
+params = { temperature = 26.0 }

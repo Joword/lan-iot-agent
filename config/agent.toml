@@ -1,0 +1,19 @@
+# LanIoT Agent configuration
+
+[agent]
+bind = "0.0.0.0"
+port = 8000
+
+[hub]
+# Local defaults. Docker Compose: set HUB_URL=http://hub:3000 and
+# HUB_MCP_URL=http://hub:3000/mcp (or MCP_URL).
+url = "http://127.0.0.1:3000"
+mcp_url = "http://127.0.0.1:3000/mcp"
+# Retries for Hub MCP / REST when Hub is still starting.
+timeout_seconds = 5.0
+max_retries = 3
+retry_backoff_seconds = 0.4
+
+[llm]
+# Relative to repo root when running locally; Docker may mount /etc/lan-iot/llm.toml.
+config_path = "config/llm.toml"
