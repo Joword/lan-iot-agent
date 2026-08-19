@@ -172,7 +172,7 @@ export default function ScenesPage() {
         <div>
           <h1 className="mb-2 text-3xl font-semibold tracking-tight">Scenes</h1>
           <p className="text-sm text-[var(--muted)]">
-            Hub scene list. Run executes actions sequentially via Home Assistant.
+            Hub scenes run through AdapterRouter. Each step shows ok / fail / skip.
           </p>
         </div>
         <button
@@ -394,11 +394,45 @@ export default function ScenesPage() {
           </div>
           {run.error ? (
             <p className="text-sm text-[var(--danger)]">{run.error}</p>
-          ) : (
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-[var(--fg)]">
-              {JSON.stringify(run.result, null, 2)}
-            </pre>
-          )}
+          ) : run.result ? (
+            <div className="space-y-3">
+              <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+                {(run.result.steps || []).map((step) => {
+                  const mark = step.skipped
+                    ? "skip"
+                    : step.ok
+                      ? "ok"
+                      : "FAIL";
+                  const tone = step.skipped
+                    ? "text-[var(--muted)]"
+                    : step.ok
+                      ? "text-[var(--muted)]"
+                      : "text-[var(--danger)]";
+                  return (
+                    <li key={`${run.sceneId}-${step.index}`} className="py-2 text-sm">
+                      <p className={tone}>
+                        <span className="font-mono text-xs">[{step.index}]</span>{" "}
+                        <span className="font-medium uppercase">{mark}</span>{" "}
+                        <span className="font-mono text-xs">{step.entity_id}</span>{" "}
+                        {step.action}
+                      </p>
+                      {step.error ? (
+                        <p className="mt-1 text-xs text-[var(--danger)]">{step.error}</p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              <details>
+                <summary className="cursor-pointer text-xs text-[var(--muted)]">
+                  raw JSON
+                </summary>
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-[var(--fg)]">
+                  {JSON.stringify(run.result, null, 2)}
+                </pre>
+              </details>
+            </div>
+          ) : null}
         </div>
       )}
     </main>

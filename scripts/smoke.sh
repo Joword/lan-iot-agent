@@ -142,7 +142,7 @@ hub_check() {
       else
         local names missing=""
         names="$(printf '%s' "$body" | jq -r '[.tools[].name]|join(",")')"
-        for need in devices.list scenes.run companion.command; do
+        for need in devices.list devices.describe scenes.run companion.command; do
           if [[ ",$names," != *",$need,"* ]]; then
             missing="${missing}${need},"
           fi
@@ -153,6 +153,60 @@ hub_check() {
         else
           result PASS "$name" "tools=$(printf '%s' "$body" | jq '.tools|length') ($names)"
         fi
+      fi
+      ;;
+    *)
+      result PASS "$name" "HTTP ${HTTP_CODE}"
+      ;;
+  esac
+}
+
+hub_post_check() {
+  local name="$1" path="$2" json="$3" kind="$4"
+  if [[ "$HUB_REACHABLE" -ne 1 ]]; then
+    result SKIP "$name" "Hub unreachable"
+    return
+  fi
+  local body
+  body="$(http_post_json "${HUB_URL}${path}" "$json")" || true
+  if [[ "$HTTP_CODE" -eq 400 || "$HTTP_CODE" -eq 404 ]]; then
+    result SKIP "$name" "HTTP ${HTTP_CODE} (entity/scene not seeded)"
+    return
+  fi
+  if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+    HUB_FAILED=1
+    result FAIL "$name" "HTTP ${HTTP_CODE}${CURL_ERR:+ — $CURL_ERR}"
+    return
+  fi
+  if [[ "$have_jq" -ne 1 ]]; then
+    result PASS "$name" "HTTP ${HTTP_CODE} (install jq for deeper checks)"
+    return
+  fi
+  case "$kind" in
+    describe)
+      if ! printf '%s' "$body" | jq -e '.data.capabilities // .capabilities' >/dev/null 2>&1; then
+        HUB_FAILED=1
+        result FAIL "$name" "missing capabilities"
+      else
+        result PASS "$name" "entity=$(printf '%s' "$body" | jq -r '.data.entity_id // .entity_id') caps=$(printf '%s' "$body" | jq '.data.capabilities // .capabilities | length')"
+      fi
+      ;;
+    action)
+      local ok
+      ok="$(printf '%s' "$body" | jq -r '.ok // empty')"
+      if [[ "$ok" != "true" ]]; then
+        HUB_FAILED=1
+        result FAIL "$name" "expected ok=true"
+      else
+        result PASS "$name" "ok entity=$(printf '%s' "$body" | jq -r '.entity_id') action=$(printf '%s' "$body" | jq -r '.action')"
+      fi
+      ;;
+    scene)
+      if ! printf '%s' "$body" | jq -e 'has("steps")' >/dev/null 2>&1; then
+        HUB_FAILED=1
+        result FAIL "$name" "missing steps[]"
+      else
+        result PASS "$name" "ok=$(printf '%s' "$body" | jq -r '.ok') steps=$(printf '%s' "$body" | jq '.steps|length') failed=$(printf '%s' "$body" | jq '.failed|length') skipped=$(printf '%s' "$body" | jq -r '.skipped_count')"
       fi
       ;;
     *)
@@ -179,6 +233,9 @@ hub_check "Hub devices" "/api/v1/devices"
 hub_check "Hub scenes" "/api/v1/scenes"
 hub_check "Hub companions" "/api/v1/companions"
 hub_check "Hub MCP tools" "/mcp/tools"
+hub_post_check "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.demo_gree_ac"}}' describe
+hub_post_check "Hub faker light on" "/api/v1/devices/light.demo_esp32_light/actions" '{"action":"turn_on"}' action
+hub_post_check "Hub scene sleep_mode" "/api/v1/scenes/sleep_mode/run" '{}' scene
 
 printf '\n'
 agent_body="$(http_get "${AGENT_URL}/health")" || true

@@ -455,3 +455,45 @@ def test_validate_control_against_describe() -> None:
         describe,
     )
     assert too_hot and "maximum" in too_hot
+
+
+def test_format_scene_run_lists_failed_steps() -> None:
+    """Scene run formatter surfaces FAIL/skip lines for the chat reply."""
+    from lan_iot_agent.graph.nodes import _format_scene_run
+
+    text = _format_scene_run(
+        {
+            "scene_id": "sleep_mode",
+            "ok": False,
+            "failed": [1],
+            "skipped_count": 1,
+            "steps": [
+                {
+                    "index": 0,
+                    "entity_id": "light.demo_esp32_light",
+                    "action": "turn_off",
+                    "ok": True,
+                    "skipped": False,
+                },
+                {
+                    "index": 1,
+                    "entity_id": "climate.missing",
+                    "action": "turn_off",
+                    "ok": False,
+                    "skipped": False,
+                    "error": "not found",
+                },
+                {
+                    "index": 2,
+                    "entity_id": "switch.gone",
+                    "action": "turn_off",
+                    "ok": False,
+                    "skipped": True,
+                },
+            ],
+        }
+    )
+    assert "partial failure" in text
+    assert "FAIL" in text
+    assert "skip" in text
+    assert "climate.missing" in text

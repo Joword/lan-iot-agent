@@ -230,6 +230,14 @@ impl SceneEngine {
             steps.push(outcome);
         }
 
+        tracing::info!(
+            scene_id = %scene.id,
+            ok = failed.is_empty(),
+            failed = failed.len(),
+            skipped = skipped_count,
+            "scene run finished"
+        );
+
         Ok(RunResult {
             scene_id: scene.id,
             ok: failed.is_empty(),

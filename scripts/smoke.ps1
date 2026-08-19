@@ -208,7 +208,7 @@ Test-HubGet "Hub MCP tools" "/mcp/tools" {
     }
     else {
         $names = @($r.Json.tools | ForEach-Object { $_.name })
-        $need = @("devices.list", "scenes.run", "companion.command")
+        $need = @("devices.list", "devices.describe", "scenes.run", "companion.command")
         $missing = @($need | Where-Object { $_ -notin $names })
         if ($missing.Count -gt 0) {
             "FAIL: missing $($missing -join ','); have=$($names -join ',')"
@@ -218,6 +218,79 @@ Test-HubGet "Hub MCP tools" "/mcp/tools" {
         }
     }
 }
+
+function Test-HubPost {
+    param(
+        [string]$Name,
+        [string]$Path,
+        [string]$Body,
+        [scriptblock]$Validate,
+        [switch]$SkipMissing
+    )
+    if (-not $script:HubReachable) {
+        Write-Result SKIP $Name "Hub unreachable"
+        return
+    }
+    $r = Invoke-Http -Method POST -Uri ($HubUrl + $Path) -Body $Body
+    if ($SkipMissing -and $r.StatusCode -in 400, 404) {
+        Write-Result SKIP $Name "HTTP $($r.StatusCode) (entity/scene not seeded)"
+        return
+    }
+    if (-not $r.Ok -or $r.StatusCode -lt 200 -or $r.StatusCode -ge 300) {
+        $script:HubFailed = $true
+        $detail = if ($r.Error) { $r.Error } else { "HTTP $($r.StatusCode)" }
+        Write-Result FAIL $Name $detail
+        return
+    }
+    if (-not $r.Json) {
+        $script:HubFailed = $true
+        Write-Result FAIL $Name "non-JSON body"
+        return
+    }
+    $msg = & $Validate $r
+    if ($msg -is [string] -and $msg.StartsWith("FAIL:")) {
+        $script:HubFailed = $true
+        Write-Result FAIL $Name $msg.Substring(5).Trim()
+    }
+    else {
+        Write-Result PASS $Name $(if ($msg) { $msg } else { "HTTP $($r.StatusCode)" })
+    }
+}
+
+Test-HubPost "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.demo_gree_ac"}}' {
+    param($r)
+    $doc = $r.Json.data
+    if ($null -eq $doc) { $doc = $r.Json }
+    $caps = $doc.capabilities
+    if ($null -eq $caps) {
+        "FAIL: missing capabilities"
+    }
+    else {
+        "entity=$($doc.entity_id) caps=$(@($caps).Count)"
+    }
+} -SkipMissing
+
+Test-HubPost "Hub faker light on" "/api/v1/devices/light.demo_esp32_light/actions" '{"action":"turn_on"}' {
+    param($r)
+    if ($r.Json.ok -eq $true) {
+        "ok entity=$($r.Json.entity_id) action=$($r.Json.action)"
+    }
+    else {
+        "FAIL: expected ok=true"
+    }
+} -SkipMissing
+
+Test-HubPost "Hub scene sleep_mode" "/api/v1/scenes/sleep_mode/run" '{}' {
+    param($r)
+    if ($null -eq $r.Json.steps) {
+        "FAIL: missing steps[]"
+    }
+    else {
+        $n = @($r.Json.steps).Count
+        $failed = @($r.Json.failed).Count
+        "ok=$($r.Json.ok) steps=$n failed=$failed skipped=$($r.Json.skipped_count)"
+    }
+} -SkipMissing
 
 # --- Agent checks (report always; do not gate exit on Agent alone) ---
 Write-Host ""

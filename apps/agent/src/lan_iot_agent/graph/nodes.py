@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from lan_iot_agent.context.builder import build_context_text, history_as_messages, system_prompt
@@ -380,6 +381,51 @@ def after_tools(state: AgentState) -> str:
     return "llm_reasoning"
 
 
+def _unwrap_mcp_data(outcome_data: Any) -> Any:
+    """Prefer Hub ``/mcp/call`` ``data`` envelope when present."""
+    if isinstance(outcome_data, dict) and isinstance(outcome_data.get("data"), dict):
+        inner = outcome_data["data"]
+        if any(k in inner for k in ("scene_id", "steps", "capabilities", "devices")):
+            return inner
+    return outcome_data
+
+
+def _format_scene_run(payload: Any) -> str:
+    """Human-readable scene run with per-step ok/fail/skip."""
+    if not isinstance(payload, dict):
+        return f"scenes.run → {json.dumps(payload, ensure_ascii=False, default=str)[:600]}"
+    scene_id = str(payload.get("scene_id") or payload.get("id") or "?")
+    ok = bool(payload.get("ok", True))
+    skipped = int(payload.get("skipped_count") or 0)
+    failed = payload.get("failed") or []
+    header = f"scenes.run {scene_id}: {'ok' if ok else 'partial failure'}"
+    if skipped:
+        header += f" · {skipped} skipped"
+    if failed:
+        header += f" · failed steps {failed}"
+    lines = [header]
+    steps = payload.get("steps") or []
+    if isinstance(steps, list):
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            index = step.get("index", "?")
+            entity_id = step.get("entity_id") or "?"
+            action = step.get("action") or "?"
+            if step.get("skipped"):
+                mark = "skip"
+            elif step.get("ok"):
+                mark = "ok"
+            else:
+                mark = "FAIL"
+            line = f"  [{index}] {mark} {entity_id} {action}"
+            err = step.get("error")
+            if err:
+                line += f" — {err}"
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _format_tool_reply(name: str, outcome_data: Any, outcome_ok: bool, error: str | None) -> str:
     if not outcome_ok:
         return f"{name} failed: {error or 'unknown error'}"
@@ -390,14 +436,7 @@ def _format_tool_reply(name: str, outcome_data: Any, outcome_ok: bool, error: st
         preview = json.dumps(devices[:20], ensure_ascii=False, default=str)
         return f"devices.list → {len(devices)} device(s): {preview}"
     if name == "scenes.run":
-        payload = outcome_data
-        if isinstance(outcome_data, dict) and "data" in outcome_data:
-            payload = outcome_data.get("data")
-        scene_id = None
-        if isinstance(payload, dict):
-            scene_id = payload.get("scene_id") or payload.get("id")
-        label = scene_id or "?"
-        return f"scenes.run → {label}: {json.dumps(payload, ensure_ascii=False, default=str)[:600]}"
+        return _format_scene_run(_unwrap_mcp_data(outcome_data))
     return f"{name} → {json.dumps(outcome_data, ensure_ascii=False, default=str)[:800]}"
 
 
@@ -514,11 +553,36 @@ async def execute_tools(state: AgentState) -> AgentState:
     tool_lines: list[str] = []
     llm_messages = list(state.get("llm_messages") or [])
     awaiting = bool(state.get("awaiting_tool_followup"))
+    trace: list[dict[str, Any]] = list(meta.get("tool_trace") or [])
+
+    def record(
+        tool_name: str,
+        args: dict[str, Any],
+        started_at: float,
+        ok: bool,
+        err: str | None = None,
+    ) -> None:
+        elapsed_ms = int(round((time.perf_counter() - started_at) * 1000))
+        ident = args.get("entity_id") or args.get("scene_id") or args.get("device_id")
+        item: dict[str, Any] = {"tool": tool_name, "ok": ok, "ms": elapsed_ms}
+        if ident:
+            item["id"] = str(ident)
+        if err:
+            item["error"] = str(err)[:200]
+        trace.append(item)
+        logger.info(
+            "tool %s ok=%s ms=%s id=%s",
+            tool_name,
+            ok,
+            elapsed_ms,
+            ident or "-",
+        )
 
     for tool in pending:
         name = str(tool.get("name") or "")
         arguments = tool.get("arguments") or {}
         tool_call_id = str(tool.get("tool_call_id") or f"call_{len(results)}")
+        started = time.perf_counter()
 
         if name == "_internal.shutdown_all":
             try:
@@ -527,11 +591,13 @@ async def execute_tools(state: AgentState) -> AgentState:
                 )
                 used_tools = True
                 tool_lines.append(summary)
+                record(name, arguments if isinstance(arguments, dict) else {}, started, True)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("shutdown_all failed")
                 errors.append(f"shutdown_all crashed: {exc}")
                 results.append({"name": name, "ok": False, "error": str(exc)})
                 tool_lines.append(f"shutdown_all crashed: {exc}")
+                record(name, {}, started, False, str(exc))
             continue
 
         arguments = arguments if isinstance(arguments, dict) else {}
@@ -556,6 +622,7 @@ async def execute_tools(state: AgentState) -> AgentState:
                 results.append(entry)
                 errors.append(rejected)
                 tool_lines.append(f"{name} rejected: {rejected}")
+                record(name, arguments, started, False, rejected)
                 if awaiting:
                     llm_messages.append(
                         tool_result_message(
@@ -593,9 +660,16 @@ async def execute_tools(state: AgentState) -> AgentState:
                 devices = extract_devices_from_mcp(outcome.data)
                 meta["hub_devices"] = devices
             elif outcome.ok and name == "scenes.run":
+                payload = _unwrap_mcp_data(outcome.data)
                 meta["last_scene"] = (
                     arguments.get("scene_id") if isinstance(arguments, dict) else None
                 )
+                if isinstance(payload, dict) and payload.get("ok") is False:
+                    errors.append(
+                        f"scene {payload.get('scene_id')} failed steps "
+                        f"{payload.get('failed') or []}"
+                    )
+            record(name, arguments, started, outcome.ok, outcome.error)
         except Exception as exc:  # noqa: BLE001 — tools must not crash the graph
             logger.exception("Tool %s failed", name)
             errors.append(f"tool {name} crashed: {exc}")
@@ -608,6 +682,7 @@ async def execute_tools(state: AgentState) -> AgentState:
                 }
             )
             tool_lines.append(f"{name} crashed: {exc}")
+            record(name, arguments, started, False, str(exc))
             if awaiting:
                 llm_messages.append(
                     tool_result_message(
@@ -629,6 +704,8 @@ async def execute_tools(state: AgentState) -> AgentState:
     status = state.get("status") or "ok"
     if errors and status == "ok":
         status = "degraded"
+
+    meta["tool_trace"] = trace
 
     return {
         **state,
