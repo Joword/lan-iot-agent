@@ -19,6 +19,12 @@ from lan_iot_agent.tools.keywords import (
     is_controllable_entity,
     shutdown_all_confirmation_reply,
 )
+from lan_iot_agent.tools.capabilities import (
+    CONTROL_TOOLS,
+    describe_payload,
+    entity_id_of_tool,
+    validate_against_describe,
+)
 from lan_iot_agent.tools.mcp import McpClient, extract_devices_from_mcp
 from lan_iot_agent.tools.schemas import ALLOWED_LLM_TOOLS, hub_tool_schemas
 
@@ -527,6 +533,37 @@ async def execute_tools(state: AgentState) -> AgentState:
                 results.append({"name": name, "ok": False, "error": str(exc)})
                 tool_lines.append(f"shutdown_all crashed: {exc}")
             continue
+
+        arguments = arguments if isinstance(arguments, dict) else {}
+        if name in CONTROL_TOOLS:
+            entity_id = entity_id_of_tool(name, arguments)
+            describe_doc: dict[str, Any] | None = None
+            if entity_id:
+                described = await client.call_tool(
+                    "devices.describe", {"entity_id": entity_id}
+                )
+                if described.ok:
+                    describe_doc = describe_payload(described.data)
+            rejected = validate_against_describe(name, arguments, describe_doc)
+            if rejected:
+                used_tools = True
+                entry = {
+                    "name": name,
+                    "ok": False,
+                    "error": rejected,
+                    "tool_call_id": tool_call_id,
+                }
+                results.append(entry)
+                errors.append(rejected)
+                tool_lines.append(f"{name} rejected: {rejected}")
+                if awaiting:
+                    llm_messages.append(
+                        tool_result_message(
+                            tool_call_id,
+                            _tool_result_content(name, None, False, rejected),
+                        )
+                    )
+                continue
 
         try:
             outcome = await client.call_tool(

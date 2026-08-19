@@ -1,12 +1,20 @@
 package com.laniot.companion
 
+import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import com.laniot.companion.admin.CompanionDeviceAdminReceiver
 import com.laniot.companion.http.CommandServer
+import com.laniot.companion.notify.CompanionNotifier
 import com.laniot.companion.pair.PairTokenStore
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -37,6 +45,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_start).setOnClickListener { startCompanionServer() }
         findViewById<Button>(R.id.btn_stop).setOnClickListener { stopCompanionServer() }
         findViewById<Button>(R.id.btn_pair_stub).setOnClickListener { pairAndRegister() }
+        findViewById<Button>(R.id.btn_enable_admin).setOnClickListener { requestDeviceAdmin() }
+        CompanionNotifier.ensureChannel(this)
+        if (Build.VERSION.SDK_INT >= 33) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                1001,
+            )
+        }
 
         refreshStatus("idle — start server, then Pair to Hub")
     }
@@ -52,7 +69,7 @@ class MainActivity : AppCompatActivity() {
             refreshStatus("already listening on :${CommandServer.DEFAULT_PORT}")
             return
         }
-        val s = CommandServer(port = CommandServer.DEFAULT_PORT)
+        val s = CommandServer(applicationContext, port = CommandServer.DEFAULT_PORT)
         s.start(daemon = false)
         server = s
         refreshStatus(
@@ -64,6 +81,17 @@ class MainActivity : AppCompatActivity() {
         server?.stop()
         server = null
         refreshStatus("server stopped")
+    }
+
+    private fun requestDeviceAdmin() {
+        val admin = ComponentName(this, CompanionDeviceAdminReceiver::class.java)
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+            .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
+            .putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Allows Hub lock commands to lock this phone.",
+            )
+        startActivity(intent)
     }
 
     /**

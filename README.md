@@ -24,7 +24,7 @@ Architecture principle: **HA is one pluggable adapter, not the product identity.
 
 ## Architecture
 
-Five layers (top → bottom). Full detail and diagram: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [architecture PNG](docs/lan-iot-agent-architecture.png)
+Five layers (top → bottom):
 
 1. **Client** — Next.js UI (chat / device panel / scenes · PC / mobile / PWA)
 2. **Control plane** — Hub (Rust/Axum): unified API · auth · scenes · MCP · **AdapterRouter** (device engine)
@@ -40,20 +40,7 @@ Five layers (top → bottom). Full detail and diagram: [docs/ARCHITECTURE.md](do
 | Companion | **Hub HTTP only** — HA does not cover this path |
 | Agent | Calls Hub MCP skills only — never HA / devices directly |
 
-> `docs/ARCHITECTURE.md` is the source of truth. English README is enough for onboarding.
-
-## Tech stack
-
-| Layer | Tech |
-|-------|------|
-| UI | Next.js 15+ · TypeScript · Tailwind |
-| Hub | Rust · Axum · Tokio · reqwest · tokio-tungstenite · tracing · serde · **DeviceAdapter / AdapterRouter** |
-| Agent | Python 3.11+ · FastAPI · LangGraph · LiteLLM |
-| LLM | Ollama (local) / OpenAI / Anthropic via LiteLLM |
-| Device adaptation | Home Assistant (`HaAdapter`) + faker adapter; pluggable for Matter / z2m later |
-| Persistence | MongoDB (Hub: auth tokens, scenes, companions) |
-| MQTT broker | Mosquitto (consumed by HA for ESP32) |
-| Deploy | [Docker Compose](deploy/docker/) (primary) · [Singularity / Apptainer](deploy/singularity/) (P7, Linux) |
+> Device paths: brand IoT and ESP32 go through Home Assistant; faker stubs share the same Hub API; Companion is Hub HTTP only; the Agent never talks to HA or brands directly.
 
 ## Repository structure
 
@@ -70,19 +57,8 @@ lan-iot-agent/
 │   └── singularity/     # P7 — .def + deploy.sh (build/start/stop/verify)
 ├── config/              # hub.toml, agent.toml, llm.toml
 ├── scripts/             # smoke.ps1 / smoke.sh
-├── docs/                # ARCHITECTURE, DEVELOPMENT, STATUS, diagrams
 └── README.md
 ```
-
-## Prerequisites
-
-| Tool | Notes |
-|------|--------|
-| Docker + Docker Compose | Recommended for full stack (Windows + Linux) |
-| Apptainer or Singularity | Optional — Linux edge/HPC deploy ([P7](deploy/singularity/README.md)) |
-| Rust 1.75+ | Local Hub development |
-| Python 3.11+ | Local Agent development |
-| Node.js 20+ | Local UI development |
 
 ## Quick start
 

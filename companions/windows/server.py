@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Windows Companion — Hub POSTs here at /command on port 9876.
 
-Production-ready demo listener (stdlib only): health, ping, notify, lock stub.
+Demo listener (stdlib only): health, ping, toast/notify, LockWorkStation.
 Register on Hub as companion.demo_pc → http://127.0.0.1:9876
 """
 
 from __future__ import annotations
 
+import ctypes
 import json
 import logging
+import os
 import platform
+import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -30,6 +34,81 @@ _STATE: dict[str, Any] = {
     "locked": False,
     "started_at": time.time(),
 }
+
+
+def _dry_run() -> bool:
+    """Skip OS side effects when COMPANION_DRY_RUN is truthy (tests)."""
+    return os.environ.get("COMPANION_DRY_RUN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _show_message_box(title: str, body: str) -> None:
+    """Blocking MessageBox on a daemon thread (always available on Windows)."""
+    ctypes.windll.user32.MessageBoxW(0, body or title, title, 0x00000040)
+
+
+def deliver_notify(title: str, body: str) -> dict[str, Any]:
+    """Show a Windows toast when possible; otherwise a MessageBox."""
+    if _dry_run():
+        return {"delivered": True, "via": "dry_run"}
+    if os.name != "nt":
+        return {"delivered": False, "error": "windows_only"}
+
+    # Toast via PowerShell / WinRT; fall back to MessageBox so notify is never a silent stub.
+    ps = (
+        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+        "ContentType = WindowsRuntime] | Out-Null; "
+        "$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent("
+        "[Windows.UI.Notifications.ToastTemplateType]::ToastText02); "
+        "$nodes = $xml.GetElementsByTagName('text'); "
+        f"$nodes.Item(0).AppendChild($xml.CreateTextNode({json.dumps(title)}))"
+        " | Out-Null; "
+        f"$nodes.Item(1).AppendChild($xml.CreateTextNode({json.dumps(body)}))"
+        " | Out-Null; "
+        "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); "
+        "[Windows.UI.Notifications.ToastNotificationManager]::"
+        "CreateToastNotifier('LanIoT').Show($toast)"
+    )
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if completed.returncode == 0:
+            return {"delivered": True, "via": "toast"}
+        log.warning("toast powershell failed: %s", completed.stderr[-400:])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("toast powershell error: %s", exc)
+
+    threading.Thread(
+        target=_show_message_box,
+        args=(title, body),
+        daemon=True,
+        name="companion-notify",
+    ).start()
+    return {"delivered": True, "via": "message_box"}
+
+
+def lock_workstation() -> dict[str, Any]:
+    """Call user32.LockWorkStation. Unlock is not supported without credentials."""
+    if _dry_run():
+        return {"ok": True, "locked": True, "via": "dry_run"}
+    if os.name != "nt":
+        return {"ok": False, "error": "windows_only"}
+    try:
+        ok = bool(ctypes.windll.user32.LockWorkStation())
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    if not ok:
+        return {"ok": False, "error": "LockWorkStation failed"}
+    return {"ok": True, "locked": True, "via": "LockWorkStation"}
 
 
 def handle_command(command: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -57,31 +136,57 @@ def handle_command(command: str, payload: dict[str, Any]) -> dict[str, Any]:
         body = str(
             payload.get("body") or payload.get("message") or meta.get("body") or ""
         )
-        _STATE["last_notify"] = {"title": title, "body": body, "at": time.time()}
-        log.info("NOTIFY %s — %s", title, body)
-        return {
-            "ok": True,
-            "accepted": True,
-            "command": "notify",
-            "delivered": True,
+        delivery = deliver_notify(title, body)
+        _STATE["last_notify"] = {
             "title": title,
             "body": body,
+            "at": time.time(),
+            "via": delivery.get("via"),
         }
+        log.info("NOTIFY %s — %s via=%s", title, body, delivery.get("via"))
+        accepted = bool(delivery.get("delivered"))
+        result: dict[str, Any] = {
+            "ok": accepted,
+            "accepted": accepted,
+            "command": "notify",
+            "title": title,
+            "body": body,
+            **delivery,
+        }
+        if not accepted:
+            result["error"] = str(delivery.get("error") or "notify_failed")
+        return result
 
     if cmd in ("lock", "lock_screen"):
-        _STATE["locked"] = True
-        log.info("LOCK stub accepted (no OS lock in demo)")
+        locked = lock_workstation()
+        if locked.get("ok"):
+            _STATE["locked"] = True
+            log.info("LOCK via %s", locked.get("via"))
+            return {
+                "ok": True,
+                "accepted": True,
+                "command": "lock",
+                "locked": True,
+                "via": locked.get("via"),
+            }
+        log.warning("LOCK failed: %s", locked.get("error"))
         return {
-            "ok": True,
-            "accepted": True,
+            "ok": False,
+            "accepted": False,
             "command": "lock",
-            "locked": True,
-            "note": "stub — replace with WinAPI LockWorkStation in production",
+            "locked": bool(_STATE["locked"]),
+            "error": str(locked.get("error") or "lock_failed"),
         }
 
     if cmd in ("unlock",):
-        _STATE["locked"] = False
-        return {"ok": True, "accepted": True, "command": "unlock", "locked": False}
+        return {
+            "ok": False,
+            "accepted": False,
+            "command": "unlock",
+            "locked": bool(_STATE["locked"]),
+            "error": "unlock_not_supported",
+            "note": "Windows cannot unlock the session without credentials",
+        }
 
     if cmd in ("echo",):
         return {"ok": True, "accepted": True, "command": "echo", "payload": payload}

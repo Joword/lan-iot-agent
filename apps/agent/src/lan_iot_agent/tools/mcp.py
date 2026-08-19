@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 KNOWN_TOOLS = (
     "devices.list",
     "devices.get_state",
+    "devices.describe",
     "devices.control",
     "climate.set",
     "lights.control",

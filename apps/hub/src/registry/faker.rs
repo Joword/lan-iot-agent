@@ -41,6 +41,8 @@ pub fn faker_catalog() -> Vec<DeviceEntity> {
             attrs(&[
                 ("temperature", json!(26.0)),
                 ("current_temperature", json!(28.5)),
+                ("min_temp", json!(16.0)),
+                ("max_temp", json!(30.0)),
                 ("hvac_modes", json!(["off", "auto", "cool", "heat", "dry", "fan_only"])),
                 ("brand_note", json!("Replace with HA gree integration entity")),
             ]),

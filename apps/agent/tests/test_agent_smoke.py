@@ -52,6 +52,7 @@ def test_system_prompt_iot_rules() -> None:
     assert "home IoT" in text or "IoT" in text
     assert "entity" in text.lower()
     assert "devices.list" in text
+    assert "devices.describe" in text
 
 
 def test_parse_tool_calls_openai_shape() -> None:
@@ -405,3 +406,52 @@ def test_keyword_list_devices_still_works_when_llm_stub() -> None:
         mcp_mock.assert_awaited_with("devices.list", {})
 
     asyncio.run(_run())
+
+
+def test_validate_control_against_describe() -> None:
+    """Reject invented actions; allow thermostat range from devices.describe."""
+    from lan_iot_agent.tools.capabilities import validate_against_describe
+
+    describe = {
+        "entity_id": "climate.demo_gree_ac",
+        "summary": {"actions": ["turn_on", "turn_off", "set_temperature", "set_hvac_mode"]},
+        "capabilities": [
+            {
+                "kind": "thermostat",
+                "actions": [
+                    {
+                        "name": "set_temperature",
+                        "params": [
+                            {
+                                "name": "temperature",
+                                "type": "number",
+                                "required": True,
+                                "minimum": 16.0,
+                                "maximum": 30.0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    assert (
+        validate_against_describe(
+            "climate.set",
+            {"entity_id": "climate.demo_gree_ac", "temperature": 26},
+            describe,
+        )
+        is None
+    )
+    err = validate_against_describe(
+        "devices.control",
+        {"entity_id": "climate.demo_gree_ac", "action": "explode"},
+        describe,
+    )
+    assert err and "explode" in err
+    too_hot = validate_against_describe(
+        "climate.set",
+        {"entity_id": "climate.demo_gree_ac", "temperature": 99},
+        describe,
+    )
+    assert too_hot and "maximum" in too_hot

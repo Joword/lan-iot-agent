@@ -1,5 +1,10 @@
 package com.laniot.companion.http
 
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
+import com.laniot.companion.admin.CompanionDeviceAdminReceiver
+import com.laniot.companion.notify.CompanionNotifier
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,6 +19,7 @@ import java.io.IOException
  * Default port **9877** (Windows demo uses 9876).
  */
 class CommandServer(
+    private val context: Context,
     port: Int = DEFAULT_PORT,
 ) : NanoHTTPD(port) {
 
@@ -38,7 +44,8 @@ class CommandServer(
                         .put("service", "companion.android")
                         .put("port", listeningPort)
                         .put("locked", locked)
-                        .put("last_notify", lastNotify),
+                        .put("last_notify", lastNotify)
+                        .put("device_admin", isDeviceAdmin()),
                 )
 
             session.method == Method.POST && path == "/command" -> handleCommand(session)
@@ -68,7 +75,8 @@ class CommandServer(
                             .put("command", if (command.isEmpty()) "ping" else command)
                             .put("service", "companion.android")
                             .put("locked", locked)
-                            .put("last_notify", lastNotify),
+                            .put("last_notify", lastNotify)
+                            .put("device_admin", isDeviceAdmin()),
                     )
 
                 "notify", "notification", "toast" -> {
@@ -77,44 +85,36 @@ class CommandServer(
                         "body",
                         payload.optString("message", ""),
                     )
+                    val delivered = CompanionNotifier.post(context, title, body)
                     lastNotify = "$title — $body"
                     json(
-                        Response.Status.OK,
+                        if (delivered) Response.Status.OK else Response.Status.BAD_REQUEST,
                         JSONObject()
-                            .put("ok", true)
-                            .put("accepted", true)
+                            .put("ok", delivered)
+                            .put("accepted", delivered)
                             .put("command", "notify")
-                            .put("delivered", true)
+                            .put("delivered", delivered)
                             .put("title", title)
                             .put("body", body)
-                            .put("note", "stub toast — wire NotificationManager in production"),
+                            .put(
+                                "error",
+                                if (delivered) JSONObject.NULL else "notification_permission_denied",
+                            ),
                     )
                 }
 
-                "lock", "lock_screen" -> {
-                    locked = true
-                    json(
-                        Response.Status.OK,
-                        JSONObject()
-                            .put("ok", true)
-                            .put("accepted", true)
-                            .put("command", "lock")
-                            .put("locked", true)
-                            .put("note", "stub — DevicePolicyManager in production"),
-                    )
-                }
+                "lock", "lock_screen" -> lockNow()
 
-                "unlock" -> {
-                    locked = false
+                "unlock" ->
                     json(
-                        Response.Status.OK,
+                        Response.Status.BAD_REQUEST,
                         JSONObject()
-                            .put("ok", true)
-                            .put("accepted", true)
+                            .put("ok", false)
+                            .put("accepted", false)
                             .put("command", "unlock")
-                            .put("locked", false),
+                            .put("locked", locked)
+                            .put("error", "unlock_not_supported"),
                     )
-                }
 
                 else ->
                     json(
@@ -136,6 +136,40 @@ class CommandServer(
                 JSONObject().put("ok", false).put("error", "invalid_json"),
             )
         }
+    }
+
+    private fun lockNow(): Response {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = ComponentName(context, CompanionDeviceAdminReceiver::class.java)
+        if (!dpm.isAdminActive(admin)) {
+            return json(
+                Response.Status.BAD_REQUEST,
+                JSONObject()
+                    .put("ok", false)
+                    .put("accepted", false)
+                    .put("command", "lock")
+                    .put("locked", locked)
+                    .put("error", "device_admin_not_active")
+                    .put("note", "Enable device admin in the Companion app, then retry lock"),
+            )
+        }
+        dpm.lockNow()
+        locked = true
+        return json(
+            Response.Status.OK,
+            JSONObject()
+                .put("ok", true)
+                .put("accepted", true)
+                .put("command", "lock")
+                .put("locked", true)
+                .put("via", "DevicePolicyManager.lockNow"),
+        )
+    }
+
+    private fun isDeviceAdmin(): Boolean {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val admin = ComponentName(context, CompanionDeviceAdminReceiver::class.java)
+        return dpm.isAdminActive(admin)
     }
 
     private fun json(status: Response.Status, body: JSONObject): Response =

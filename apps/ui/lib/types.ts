@@ -1,4 +1,25 @@
 /** Loose Device shape matching Hub registry / HA entities. */
+export type ParamSpec = {
+  name: string;
+  type?: string;
+  required?: boolean;
+  minimum?: number;
+  maximum?: number;
+  enum?: string[];
+  description?: string;
+};
+
+export type ActionSpec = {
+  name: string;
+  description?: string;
+  params?: ParamSpec[];
+};
+
+export type Capability = {
+  kind: string;
+  actions?: ActionSpec[];
+};
+
 export type Device = {
   entity_id: string;
   /** Display name from Hub (`friendly_name`) or HA (`name`). */
@@ -12,6 +33,8 @@ export type Device = {
   brand?: string | null;
   /** Stub / MQTT demo gear — swap with real HA entities later. */
   is_faker?: boolean;
+  attributes?: Record<string, unknown>;
+  capabilities?: Capability[];
 };
 
 export type DeviceListResponse = {
@@ -118,6 +141,39 @@ export type HubHealthResponse = {
 
 export function deviceDisplayName(d: Device): string {
   return d.friendly_name || d.name || d.entity_id;
+}
+
+export function hasCapability(d: Device, kind: string): boolean {
+  return (d.capabilities || []).some((c) => c.kind === kind);
+}
+
+export function actionSpec(d: Device, action: string): ActionSpec | undefined {
+  for (const cap of d.capabilities || []) {
+    const found = (cap.actions || []).find((a) => a.name === action);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function paramSpec(
+  d: Device,
+  action: string,
+  param: string,
+): ParamSpec | undefined {
+  return actionSpec(d, action)?.params?.find((p) => p.name === param);
+}
+
+export function attrNumber(d: Device, keys: string[]): number | undefined {
+  const attrs = d.attributes || {};
+  for (const key of keys) {
+    const v = attrs[key];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
 }
 
 export function chatReplyText(body: ChatResponse | string): string {

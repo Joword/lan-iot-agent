@@ -9,7 +9,11 @@ import {
   type StateChangedFrame,
 } from "../../lib/hubWs";
 import {
+  actionSpec,
+  attrNumber,
   deviceDisplayName,
+  hasCapability,
+  paramSpec,
   type Device,
   type DeviceListResponse,
 } from "../../lib/types";
@@ -23,9 +27,161 @@ function upsertDevice(list: Device[], device: Device): Device[] {
   return next;
 }
 
-function isControllable(d: Device): boolean {
-  const t = (d.entity_type || d.entity_id.split(".")[0] || "").toLowerCase();
-  return ["light", "switch", "climate", "fan", "cover"].includes(t);
+type RunAction = (
+  entityId: string,
+  action: string,
+  params?: Record<string, unknown>,
+) => Promise<void>;
+
+function DeviceControls({
+  device,
+  busy,
+  onAction,
+}: {
+  device: Device;
+  busy: boolean;
+  onAction: RunAction;
+}) {
+  const brightnessSpec = paramSpec(device, "set_brightness", "brightness");
+  const tempSpec = paramSpec(device, "set_temperature", "temperature");
+  const hvacSpec = paramSpec(device, "set_hvac_mode", "mode");
+  const brightnessMax = brightnessSpec?.maximum ?? 255;
+  const brightnessMin = brightnessSpec?.minimum ?? 0;
+  const brightness =
+    attrNumber(device, ["brightness", "brightness_pct"]) ??
+    Math.round((brightnessMax + brightnessMin) / 2);
+  const temperature =
+    attrNumber(device, ["temperature", "target_temp"]) ?? tempSpec?.minimum ?? 24;
+  const tempMin = tempSpec?.minimum ?? 16;
+  const tempMax = tempSpec?.maximum ?? 30;
+  const modes = hvacSpec?.enum ?? [];
+  const hasOnOff = hasCapability(device, "on_off") || Boolean(actionSpec(device, "turn_on"));
+  const hasCover = hasCapability(device, "open_close");
+  const hasFan = hasCapability(device, "fan_speed");
+  const controllable =
+    hasOnOff ||
+    Boolean(brightnessSpec) ||
+    Boolean(tempSpec) ||
+    modes.length > 0 ||
+    hasCover ||
+    hasFan;
+
+  if (!controllable) {
+    return (
+      <span className={device.available === false ? "text-[var(--muted)]" : undefined}>
+        {device.state}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex min-w-[12rem] flex-1 flex-col items-end gap-2 text-sm">
+      <div className="flex items-center gap-2">
+        <span className={device.available === false ? "text-[var(--muted)]" : undefined}>
+          {device.state}
+        </span>
+        {hasOnOff ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAction(device.entity_id, "turn_on")}
+              className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
+            >
+              On
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAction(device.entity_id, "turn_off")}
+              className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
+            >
+              Off
+            </button>
+          </>
+        ) : null}
+        {hasCover ? (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAction(device.entity_id, "open_cover")}
+              className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
+            >
+              Open
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onAction(device.entity_id, "close_cover")}
+              className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
+            >
+              Close
+            </button>
+          </>
+        ) : null}
+      </div>
+      {brightnessSpec ? (
+        <label className="flex w-full max-w-xs items-center gap-2 text-xs text-[var(--muted)]">
+          Brightness
+          <input
+            type="range"
+            min={brightnessMin}
+            max={brightnessMax}
+            defaultValue={brightness}
+            disabled={busy}
+            className="flex-1 accent-[var(--accent)]"
+            onMouseUp={(e) => {
+              const value = Number((e.target as HTMLInputElement).value);
+              void onAction(device.entity_id, "set_brightness", { brightness: value });
+            }}
+            onTouchEnd={(e) => {
+              const value = Number((e.target as HTMLInputElement).value);
+              void onAction(device.entity_id, "set_brightness", { brightness: value });
+            }}
+          />
+        </label>
+      ) : null}
+      {tempSpec ? (
+        <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+          °C
+          <input
+            type="number"
+            min={tempMin}
+            max={tempMax}
+            step={0.5}
+            defaultValue={temperature}
+            disabled={busy}
+            className="w-20 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-[var(--fg)]"
+            onBlur={(e) => {
+              const value = Number(e.target.value);
+              if (!Number.isFinite(value)) return;
+              void onAction(device.entity_id, "set_temperature", { temperature: value });
+            }}
+          />
+        </label>
+      ) : null}
+      {modes.length > 0 ? (
+        <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+          Mode
+          <select
+            defaultValue={device.state}
+            disabled={busy}
+            className="rounded border border-[var(--border)] bg-transparent px-2 py-1 text-[var(--fg)]"
+            onChange={(e) => {
+              void onAction(device.entity_id, "set_hvac_mode", { mode: e.target.value });
+            }}
+          >
+            {modes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
+  );
 }
 
 export default function DevicesPage() {
@@ -97,19 +253,21 @@ export default function DevicesPage() {
     return () => close();
   }, [load]);
 
-  async function runAction(entityId: string, action: string) {
+  async function runAction(
+    entityId: string,
+    action: string,
+    params: Record<string, unknown> = {},
+  ) {
     setActionBusy(entityId);
     setActionError(null);
     try {
-      // Prefer live WS command when connected; else REST.
       if (wsStatus === "open" && sendRef.current) {
         sendRef.current({
           type: "device:command",
           entity_id: entityId,
           action,
-          params: {},
+          params,
         });
-        // Optimistic refresh shortly after.
         setTimeout(() => void load({ quiet: true }), 400);
         return;
       }
@@ -118,7 +276,7 @@ export default function DevicesPage() {
         {
           method: "POST",
           headers: hubAuthHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ action, params: {} }),
+          body: JSON.stringify({ action, params }),
         },
       );
       if (!res.ok) {
@@ -148,8 +306,8 @@ export default function DevicesPage() {
         <div>
           <h1 className="mb-2 text-3xl font-semibold tracking-tight">Devices</h1>
           <p className="text-sm text-[var(--muted)]">
-            Hub registry + On/Off (WS <code className="text-xs">device:command</code>{" "}
-            or REST). Live via{" "}
+            Controls follow Hub <code className="text-xs">capabilities</code>{" "}
+            (on/off, brightness, thermostat, HVAC). Live via{" "}
             <code className="text-xs">device:state_changed</code>.
           </p>
         </div>
@@ -208,7 +366,7 @@ export default function DevicesPage() {
               {data.devices.map((d) => (
                 <li
                   key={d.entity_id}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3"
+                  className="flex flex-wrap items-start justify-between gap-3 py-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">
@@ -224,37 +382,16 @@ export default function DevicesPage() {
                       {d.brand ? (
                         <span className="ml-2 text-[var(--muted)]">· {d.brand}</span>
                       ) : null}
+                      {d.source ? (
+                        <span className="ml-2 text-[var(--muted)]">· {d.source}</span>
+                      ) : null}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span
-                      className={
-                        d.available === false ? "text-[var(--muted)]" : undefined
-                      }
-                    >
-                      {d.state}
-                    </span>
-                    {isControllable(d) ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={actionBusy === d.entity_id}
-                          onClick={() => void runAction(d.entity_id, "turn_on")}
-                          className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
-                        >
-                          On
-                        </button>
-                        <button
-                          type="button"
-                          disabled={actionBusy === d.entity_id}
-                          onClick={() => void runAction(d.entity_id, "turn_off")}
-                          className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:border-[var(--accent)] disabled:opacity-50"
-                        >
-                          Off
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
+                  <DeviceControls
+                    device={d}
+                    busy={actionBusy === d.entity_id}
+                    onAction={runAction}
+                  />
                 </li>
               ))}
             </ul>
