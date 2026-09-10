@@ -56,7 +56,7 @@ pub async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> 
         status: "ok",
         service: "hub",
         ha: HaHealth {
-            configured: state.ha.is_configured(),
+            configured: state.adapters.is_configured("ha"),
             connection,
         },
         mongodb,

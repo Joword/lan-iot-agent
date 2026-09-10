@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""Windows Companion — Hub POSTs here at /command on port 9876.
+"""Windows Companion — Hub POSTs here at /command.
 
-Demo listener (stdlib only): health, ping, toast/notify, LockWorkStation.
-Register on Hub as companion.demo_pc → http://127.0.0.1:9876
+Binds 0.0.0.0 by default so Hub on the LAN can reach this PC. On start,
+registers with Hub (`POST /api/v1/companions`) unless `--no-register`.
 """
 
 from __future__ import annotations
 
+import argparse
 import ctypes
 import json
 import logging
 import os
 import platform
+import socket
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-HOST = "127.0.0.1"
+BIND_HOST = "0.0.0.0"
 PORT = 9876
 
 logging.basicConfig(
@@ -44,6 +49,113 @@ def _dry_run() -> bool:
         "yes",
         "on",
     }
+
+
+def lan_ipv4() -> str:
+    """Best-effort LAN IPv4 for Hub to call back (not 0.0.0.0)."""
+    override = os.environ.get("COMPANION_ADVERTISE_HOST", "").strip()
+    if override:
+        return override
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        return ip or "127.0.0.1"
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+def advertise_base_url(hub: str, port: int, override: str) -> str:
+    """URL Hub should POST to. Local Hub → 127.0.0.1; otherwise this PC's LAN IP."""
+    if override.strip():
+        return override.strip()
+    host = (urllib.parse.urlparse(hub).hostname or "").lower()
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        return f"http://127.0.0.1:{port}"
+    return f"http://{lan_ipv4()}:{port}"
+
+
+def _json_request(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    bearer: str | None = None,
+    timeout: float = 5.0,
+) -> tuple[int | None, dict[str, Any] | None]:
+    """POST/GET JSON. Returns (status, obj) or (None, None) on network failure."""
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json; charset=utf-8")
+    if bearer:
+        req.add_header("Authorization", f"Bearer {bearer}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8") or "{}"
+            parsed = json.loads(raw)
+            payload = parsed if isinstance(parsed, dict) else {"raw": parsed}
+            return int(resp.status), payload
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": raw}
+        payload = parsed if isinstance(parsed, dict) else {"raw": parsed}
+        return int(exc.code), payload
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        log.warning("Hub request failed %s %s: %s", method, url, exc)
+        return None, None
+
+
+def pair_hub(hub: str) -> str | None:
+    """POST /api/v1/auth/pair; return token or None."""
+    status, data = _json_request("POST", f"{hub.rstrip('/')}/api/v1/auth/pair", {})
+    if status and 200 <= status < 300 and isinstance(data, dict):
+        token = data.get("token")
+        if isinstance(token, str) and token.strip():
+            return token.strip()
+    return None
+
+
+def register_with_hub(
+    *,
+    hub: str,
+    companion_id: str,
+    name: str,
+    base_url: str,
+    kind: str,
+    pair: bool,
+) -> bool:
+    """Register this listener on Hub. Warn and continue if Hub is down."""
+    token: str | None = None
+    if pair:
+        token = pair_hub(hub)
+        if not token:
+            log.warning("pair failed; registering without Bearer (demo AUTH_REQUIRED=false)")
+
+    body = {
+        "id": companion_id,
+        "name": name,
+        "base_url": base_url,
+        "kind": kind,
+    }
+    url = f"{hub.rstrip('/')}/api/v1/companions"
+    status, data = _json_request("POST", url, body, bearer=token)
+    if status == 401 and not token:
+        token = pair_hub(hub)
+        if token:
+            status, data = _json_request("POST", url, body, bearer=token)
+    if status and 200 <= status < 300:
+        log.info("registered on Hub as %s → %s", companion_id, base_url)
+        return True
+    log.warning(
+        "Hub register failed (status=%s body=%s). Listener still up; register from UI or retry.",
+        status,
+        data,
+    )
+    return False
 
 
 def _show_message_box(title: str, body: str) -> None:
@@ -185,7 +297,7 @@ def handle_command(command: str, payload: dict[str, Any]) -> dict[str, Any]:
             "command": "unlock",
             "locked": bool(_STATE["locked"]),
             "error": "unlock_not_supported",
-            "note": "Windows cannot unlock the session without credentials",
+            "note": "Windows cannot unlock the session without credentials; Hub UI has no Unlock",
         }
 
     if cmd in ("echo",):
@@ -255,16 +367,144 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self._send_json(status, result)
 
 
-def main() -> None:
-    """Start the ThreadingHTTPServer Companion listener on HOST:PORT."""
-    server = ThreadingHTTPServer((HOST, PORT), CompanionHandler)
-    log.info("Companion Windows listening on http://%s:%s/command", HOST, PORT)
-    log.info("Supported: ping | notify | lock | unlock | echo")
+def open_firewall(port: int) -> bool:
+    """netsh inbound allow for TCP port. Needs an elevated shell; no-op on non-Windows."""
+    if os.name != "nt":
+        log.warning("--open-firewall is Windows-only")
+        return False
+    cmd = [
+        "netsh",
+        "advfirewall",
+        "firewall",
+        "add",
+        "rule",
+        "name=LanIoT Companion",
+        "dir=in",
+        "action=allow",
+        "protocol=TCP",
+        f"localport={port}",
+    ]
     try:
-        server.serve_forever()
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except OSError as exc:
+        log.warning("firewall netsh error: %s", exc)
+        return False
+    if completed.returncode == 0:
+        log.info("firewall: inbound TCP %s allowed (LanIoT Companion)", port)
+        return True
+    detail = (completed.stderr or completed.stdout or "").strip()
+    log.warning("firewall rule failed (run as Administrator): %s", detail)
+    return False
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """CLI: Hub URL, companion id, bind host/port, optional skip-register."""
+    parser = argparse.ArgumentParser(description="LanIoT Windows Companion")
+    parser.add_argument(
+        "--hub",
+        default=os.environ.get("HUB_URL", "http://127.0.0.1:3000"),
+        help="Hub base URL (env HUB_URL)",
+    )
+    parser.add_argument(
+        "--id",
+        default=os.environ.get("COMPANION_ID", "companion.demo_pc"),
+        help="Companion id registered on Hub (env COMPANION_ID)",
+    )
+    parser.add_argument(
+        "--name",
+        default=os.environ.get("COMPANION_NAME", "Demo PC"),
+        help="Display name (env COMPANION_NAME)",
+    )
+    parser.add_argument(
+        "--kind",
+        default=os.environ.get("COMPANION_KIND", "pc"),
+        help="Companion kind (env COMPANION_KIND)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("COMPANION_BIND_HOST", BIND_HOST),
+        help="Bind address (default 0.0.0.0 so Hub on LAN can connect)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("COMPANION_PORT", str(PORT))),
+        help="Listen port (env COMPANION_PORT)",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("COMPANION_BASE_URL", ""),
+        help="URL Hub should POST to (local Hub → http://127.0.0.1:<port>)",
+    )
+    parser.add_argument(
+        "--no-register",
+        action="store_true",
+        help="Do not POST /api/v1/companions on start",
+    )
+    parser.add_argument(
+        "--pair",
+        action="store_true",
+        help="POST /api/v1/auth/pair before register (needed if AUTH_REQUIRED=true)",
+    )
+    parser.add_argument(
+        "--open-firewall",
+        action="store_true",
+        help="Add a Windows inbound allow rule for the listen port (needs Administrator)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Start the ThreadingHTTPServer Companion listener, then register on Hub."""
+    global BIND_HOST, PORT  # pylint: disable=global-statement
+    args = parse_args(argv)
+    BIND_HOST = args.host
+    PORT = args.port
+
+    advertise = advertise_base_url(args.hub, PORT, args.base_url)
+    server = ThreadingHTTPServer((BIND_HOST, PORT), CompanionHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True, name="companion-http")
+    thread.start()
+    log.info("Companion Windows listening on http://%s:%s/command", BIND_HOST, PORT)
+    log.info("Advertise base_url=%s", advertise)
+    log.info("Supported: ping | notify | lock | unlock | echo")
+    log.info(
+        "If Hub cannot reach this PC: allow inbound TCP %s, or pass --open-firewall "
+        "(Administrator). No tray app — leave this console running.",
+        PORT,
+    )
+    if "127.0.0.1" in advertise or "localhost" in advertise:
+        log.info(
+            "Hub in Docker cannot call 127.0.0.1 on the host — pass "
+            "--base-url http://host.docker.internal:%s (or this PC's LAN IP)",
+            PORT,
+        )
+    if args.open_firewall:
+        open_firewall(PORT)
+
+    if not args.no_register:
+        register_with_hub(
+            hub=args.hub,
+            companion_id=args.id,
+            name=args.name,
+            base_url=advertise,
+            kind=args.kind,
+            pair=bool(args.pair),
+        )
+
+    try:
+        while thread.is_alive():
+            thread.join(timeout=0.5)
     except KeyboardInterrupt:
         log.info("shutting down")
     finally:
+        server.shutdown()
         server.server_close()
 
 

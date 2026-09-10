@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.laniot.companion.admin.CompanionDeviceAdminReceiver
 import com.laniot.companion.http.CommandServer
+import com.laniot.companion.net.LanAddress
 import com.laniot.companion.notify.CompanionNotifier
 import com.laniot.companion.pair.PairTokenStore
 import org.json.JSONObject
@@ -110,7 +111,8 @@ class MainActivity : AppCompatActivity() {
                 val companionId = "companion.android_${android.os.Build.MODEL}"
                     .replace(Regex("[^a-zA-Z0-9_.]"), "_")
                     .lowercase()
-                val baseUrl = "http://${lanHint()}:${CommandServer.DEFAULT_PORT}"
+                val lan = LanAddress.advertiseHost()
+                val baseUrl = "http://$lan:${CommandServer.DEFAULT_PORT}"
                 val body = JSONObject()
                     .put("id", companionId)
                     .put("name", "Android ${android.os.Build.MODEL}")
@@ -121,9 +123,14 @@ class MainActivity : AppCompatActivity() {
                     body,
                     bearer = token,
                 )
+                val extra = if (LanAddress.isEmulator()) {
+                    " (emulator: adb forward tcp:${CommandServer.DEFAULT_PORT} tcp:${CommandServer.DEFAULT_PORT})"
+                } else {
+                    ""
+                }
                 main.post {
                     refreshStatus(
-                        "paired+registered id=$companionId base_url=$baseUrl hub=$hub",
+                        "paired+registered id=$companionId base_url=$baseUrl hub=$hub$extra",
                     )
                 }
             } catch (e: Exception) {
@@ -132,12 +139,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun lanHint(): String {
-        // Emulator → host loopback via 10.0.2.2 is for Hub; companion itself
-        // must be reachable from Hub host — user replaces with real LAN IP.
-        return "10.0.2.2"
     }
 
     private fun postJson(

@@ -116,8 +116,11 @@ impl SceneEngine {
         let collection: Collection<Scene> = store.collection("scenes");
         ensure_scene_indexes(&collection).await?;
 
+        // Scenes persist after the first boot, so edits to scenes.toml are
+        // invisible to an existing collection. SCENES_RESEED=1 overwrites the
+        // seeded ids once (hand-authored scenes with other ids are untouched).
         let count = collection.count_documents(doc! {}).await?;
-        if count == 0 {
+        if count == 0 || reseed_requested() {
             let seed = load_seed_scenes();
             for scene in &seed {
                 collection
@@ -128,9 +131,14 @@ impl SceneEngine {
             tracing::info!(
                 database = store.database_name(),
                 count = seed.len(),
+                reseed = count > 0,
                 "seeded MongoDB scenes collection"
             );
-            return Ok(Self::from_scenes_with_collection(seed, Some(collection)));
+            if count == 0 {
+                return Ok(Self::from_scenes_with_collection(seed, Some(collection)));
+            }
+            // Re-seed over an existing collection: fall through so hand-authored
+            // scenes outside the seed ids stay loaded.
         }
 
         let mut cursor = collection.find(doc! {}).await?;
@@ -321,65 +329,80 @@ fn load_seed_scenes() -> Vec<Scene> {
     demo_scenes()
 }
 
+/// `SCENES_RESEED` truthy → overwrite seeded scene ids in Mongo at boot.
+fn reseed_requested() -> bool {
+    std::env::var("SCENES_RESEED")
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// Lights/plug shared by both demo scenes, in both id families.
+///
+/// `*.faker_*` are in-memory stubs, `*.demo_*` are the HA MQTT fixtures. Only
+/// one family is usually present; absent entities are reported as skipped.
+fn demo_off_steps() -> Vec<SceneAction> {
+    [
+        "light.faker_esp32_light",
+        "light.demo_esp32_light",
+        "light.faker_xiaomi_bulb",
+        "light.demo_xiaomi_bulb",
+        "switch.faker_xiaomi_plug",
+        "switch.demo_xiaomi_plug",
+    ]
+    .iter()
+    .map(|entity_id| SceneAction {
+        entity_id: (*entity_id).into(),
+        action: "turn_off".into(),
+        params: HashMap::new(),
+    })
+    .collect()
+}
+
+fn demo_climate_steps(action: &str, params: HashMap<String, Value>) -> Vec<SceneAction> {
+    ["climate.faker_gree_ac", "climate.demo_gree_ac"]
+        .iter()
+        .map(|entity_id| SceneAction {
+            entity_id: (*entity_id).into(),
+            action: action.into(),
+            params: params.clone(),
+        })
+        .collect()
+}
+
 fn demo_scenes() -> Vec<Scene> {
+    let mut sleep = demo_off_steps();
+    sleep.extend(demo_climate_steps(
+        "set_hvac_mode",
+        HashMap::from([("hvac_mode".into(), json!("off"))]),
+    ));
+
+    let mut away = demo_off_steps();
+    away.extend(demo_climate_steps(
+        "set_temperature",
+        HashMap::from([("temperature".into(), json!(26.0))]),
+    ));
+
     vec![
         Scene {
             id: "sleep_mode".into(),
             name: "Sleep Mode".into(),
             description: Some(
-                "Multi-brand bedtime: ESP32 + Xiaomi lights off, Gree AC off [faker]".into(),
+                "Multi-brand bedtime: ESP32 + Xiaomi lights off, Gree AC off".into(),
             ),
-            actions: vec![
-                SceneAction {
-                    entity_id: "light.demo_esp32_light".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "light.faker_xiaomi_bulb".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "switch.faker_xiaomi_plug".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "climate.demo_gree_ac".into(),
-                    action: "set_hvac_mode".into(),
-                    params: HashMap::from([("hvac_mode".into(), json!("off"))]),
-                },
-            ],
+            actions: sleep,
         },
         Scene {
             id: "away_mode".into(),
             name: "Away Mode".into(),
             description: Some(
-                "Leaving home: turn off lights/plug and set Gree cool 26°C [faker]".into(),
+                "Leaving home: turn off lights/plug and set Gree cool 26°C".into(),
             ),
-            actions: vec![
-                SceneAction {
-                    entity_id: "light.demo_esp32_light".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "light.faker_xiaomi_bulb".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "switch.faker_xiaomi_plug".into(),
-                    action: "turn_off".into(),
-                    params: HashMap::new(),
-                },
-                SceneAction {
-                    entity_id: "climate.demo_gree_ac".into(),
-                    action: "set_temperature".into(),
-                    params: HashMap::from([("temperature".into(), json!(26.0))]),
-                },
-            ],
+            actions: away,
         },
     ]
 }

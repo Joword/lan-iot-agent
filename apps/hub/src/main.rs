@@ -34,7 +34,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 /// Shared application state for Axum handlers.
 pub struct AppState {
     pub config: HubConfig,
-    pub ha: HaAdapter,
     /// Southbound device backends keyed by source (`ha`, `faker`, …).
     pub adapters: AdapterRouter,
     pub agent: AgentClient,
@@ -133,7 +132,6 @@ async fn main() {
 
     let state = Arc::new(AppState {
         config: config.clone(),
-        ha,
         adapters,
         agent,
         registry,

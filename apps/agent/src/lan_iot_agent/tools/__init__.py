@@ -26,12 +26,16 @@ from lan_iot_agent.tools.mcp import (
 )
 from lan_iot_agent.tools.schemas import (
     ALLOWED_LLM_TOOLS,
+    allowed_llm_tools,
     hub_tool_names,
     hub_tool_schemas,
+    refresh_hub_tool_schemas,
+    tools_from_hub_catalog,
 )
 
 __all__ = [
     "ALLOWED_LLM_TOOLS",
+    "allowed_llm_tools",
     "DEFAULT_CLIMATE_ENTITY",
     "DEFAULT_COMPANION_ID",
     "KNOWN_TOOLS",
@@ -49,7 +53,9 @@ __all__ = [
     "hub_tool_schemas",
     "infer_tools_from_message",
     "is_controllable_entity",
+    "refresh_hub_tool_schemas",
     "resolve_climate_entity",
     "resolve_companion_id",
+    "tools_from_hub_catalog",
     "wants_device_list",
 ]

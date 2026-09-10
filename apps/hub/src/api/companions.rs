@@ -7,6 +7,8 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::adapters::companion::{CommandResult, CompanionDevice, CompanionError};
@@ -35,6 +37,8 @@ pub struct CompanionListResponse {
 #[derive(Deserialize)]
 pub struct CommandRequest {
     pub command: String,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Deserialize)]
@@ -138,14 +142,23 @@ pub async fn unregister_companion(
 
 /// POST /api/v1/companions/:id/command
 ///
-/// Body: `{"command":"…"}`. Unknown id → 404. Offline Companion → 503 with detail
-/// (Hub stays up; demo `companion.demo_pc` may be unreachable).
+/// Body: `{"command":"…"}` plus optional fields (`title`, `body`, …) forwarded
+/// to the Companion. Unknown id → 404. Offline Companion → 503. Companion
+/// 4xx / `accepted:false` → HTTP 200 with `ok: false` (not a Hub 502).
 pub async fn companion_command(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(body): Json<CommandRequest>,
 ) -> Result<Json<CommandResult>, (StatusCode, Json<ErrorBody>)> {
-    match state.companions.send_command(&id, &body.command).await {
+    match state
+        .companions
+        .send_command(
+            &id,
+            &body.command,
+            Some(&Value::Object(body.extra.into_iter().collect())),
+        )
+        .await
+    {
         Ok(result) => Ok(Json(result)),
         Err(CompanionError::NotFound(cid)) => Err((
             StatusCode::NOT_FOUND,

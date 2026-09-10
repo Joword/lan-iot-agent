@@ -330,7 +330,15 @@ fn tool_catalog() -> Vec<Value> {
                     },
                     "command": {
                         "type": "string",
-                        "description": "Command string forwarded to Companion POST /command"
+                        "description": "Command string forwarded to Companion POST /command (ping, notify, lock, …)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional notify title"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Optional notify body / message"
                     }
                 }
             }),
@@ -369,8 +377,8 @@ async fn call_tool(state: &AppState, name: &str, arguments: Value) -> Result<Val
 }
 
 async fn tool_devices_list(state: &AppState, args: &Value) -> Result<Value, JsonRpcError> {
-    if state.registry.len().await == 0 && state.ha.is_configured() {
-        if let Err(e) = state.ha.sync_registry(&state.registry).await {
+    if state.registry.len().await == 0 && state.adapters.is_configured("ha") {
+        if let Err(e) = state.adapters.sync_into("ha", &state.registry).await {
             tracing::warn!(error = %e, "MCP devices.list: HA sync failed");
             return Ok(json!({
                 "devices": [],
@@ -405,7 +413,7 @@ async fn tool_devices_list(state: &AppState, args: &Value) -> Result<Value, Json
     let ha_available = matches!(
         *state.ha_status.read().await,
         crate::adapters::ha::HaConnectionStatus::Connected
-    ) || (!devices.is_empty() && state.ha.is_configured());
+    ) || (!devices.is_empty() && state.adapters.is_configured("ha"));
 
     Ok(json!({
         "devices": devices,
@@ -557,7 +565,10 @@ async fn tool_companion_command(state: &AppState, args: &Value) -> Result<Value,
         .and_then(|v| v.as_str())
         .ok_or_else(|| rpc_err(-32602, "command required", None))?;
 
-    match state.companions.send_command(device_id, command).await {
+    match state
+        .companions
+        .send_command(device_id, command, Some(args))
+        .await {
         Ok(result) => Ok(serde_json::to_value(result).unwrap_or(json!({}))),
         Err(crate::adapters::companion::CompanionError::NotFound(id)) => Err(rpc_err(
             -32004,

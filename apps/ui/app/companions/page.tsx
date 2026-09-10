@@ -18,8 +18,6 @@ type CommandState = {
   offline: boolean;
 };
 
-const SAMPLE_COMMAND = "ping";
-
 async function readHubError(res: Response): Promise<string> {
   const text = await res.text().catch(() => "");
   if (!text) return `Hub returned ${res.status}`;
@@ -111,7 +109,11 @@ export default function CompanionsPage() {
     }
   }
 
-  async function sendCommand(id: string) {
+  async function sendCommand(
+    id: string,
+    command: string,
+    extra?: Record<string, unknown>,
+  ) {
     setCmd({
       companionId: id,
       loading: true,
@@ -125,7 +127,7 @@ export default function CompanionsPage() {
         {
           method: "POST",
           headers: hubAuthHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ command: SAMPLE_COMMAND }),
+          body: JSON.stringify({ command, ...(extra || {}) }),
         },
       );
       if (res.status === 503) {
@@ -175,9 +177,10 @@ export default function CompanionsPage() {
             Companions
           </h1>
           <p className="text-sm text-[var(--muted)]">
-            Hub HTTP companions (phone / PC). Demo points at{" "}
-            <code className="text-xs">http://127.0.0.1:9876</code> — start the
-            Windows stub so commands succeed.
+            Hub HTTP companions (phone / PC). Start{" "}
+            <code className="text-xs">companions/windows/server.py</code> so
+            this PC auto-registers; then Ping / Notify / Lock. Lock really
+            locks the session and cannot be undone from this UI (no unlock).
           </p>
         </div>
         <button
@@ -314,9 +317,9 @@ export default function CompanionsPage() {
           </p>
           {companions.length === 0 ? (
             <p className="rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-6 text-sm text-[var(--muted)]">
-              No companions registered. Use the form above, or Hub seeds{" "}
-              <code className="text-xs">companion.demo_pc</code> when the
-              companions stub is enabled.
+              No companions registered. Start the Windows listener (it
+              registers itself) or use the form above. Hub may also seed{" "}
+              <code className="text-xs">companion.demo_pc</code>.
             </p>
           ) : (
             <ul className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
@@ -336,16 +339,39 @@ export default function CompanionsPage() {
                       <span className="font-mono">{c.base_url}</span>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void sendCommand(c.id)}
-                    disabled={cmd?.loading === true && cmd.companionId === c.id}
-                    className="shrink-0 rounded border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-                  >
-                    {cmd?.loading && cmd.companionId === c.id
-                      ? "Sending…"
-                      : `Send “${SAMPLE_COMMAND}”`}
-                  </button>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void sendCommand(c.id, "ping")}
+                      disabled={cmd?.loading === true && cmd.companionId === c.id}
+                      className="rounded border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {cmd?.loading && cmd.companionId === c.id
+                        ? "Sending…"
+                        : "Ping"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void sendCommand(c.id, "notify", {
+                          title: "LanIoT",
+                          body: "Hello from the Hub UI",
+                        })
+                      }
+                      disabled={cmd?.loading === true && cmd.companionId === c.id}
+                      className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
+                    >
+                      Notify
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void sendCommand(c.id, "lock")}
+                      disabled={cmd?.loading === true && cmd.companionId === c.id}
+                      className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
+                    >
+                      Lock
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -364,6 +390,9 @@ export default function CompanionsPage() {
             </p>
             {cmd.result?.ok ? (
               <span className="text-xs text-[var(--muted)]">ok</span>
+            ) : null}
+            {cmd.result && !cmd.result.ok && !cmd.offline ? (
+              <span className="text-xs text-[var(--danger)]">rejected</span>
             ) : null}
             {cmd.offline ? (
               <span className="text-xs text-[var(--warn)]">offline / 503</span>

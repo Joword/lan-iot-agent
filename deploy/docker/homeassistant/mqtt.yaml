@@ -26,7 +26,11 @@
 
 # Delete or disable the matching MQTT faker block below. Hub core stays unchanged.
 
-# See docs/P4_MULTI_BRAND.md.
+# Id split — do not break it:
+#   HA MQTT entities here  → `*.demo_*`
+#   In-memory Hub faker    → `*.faker_*`
+# A shared entity_id means one silently replaces the other in the Hub registry
+# (HA wins). Keep every object_id below prefixed `demo_`.
 
 #
 
@@ -74,19 +78,19 @@ light:
 
   - name: "Xiaomi Bulb [faker]"
 
-    unique_id: lan_iot_faker_xiaomi_bulb
+    unique_id: lan_iot_demo_xiaomi_bulb
 
-    object_id: faker_xiaomi_bulb
+    object_id: demo_xiaomi_bulb
 
     schema: json
 
-    state_topic: "home/faker/xiaomi_bulb/state"
+    state_topic: "home/demo/xiaomi_bulb/state"
 
-    command_topic: "home/faker/xiaomi_bulb/set"
+    command_topic: "home/demo/xiaomi_bulb/set"
 
     availability:
 
-      - topic: "home/faker/xiaomi_bulb/availability"
+      - topic: "home/demo/xiaomi_bulb/availability"
 
     payload_available: "online"
 
@@ -162,17 +166,17 @@ switch:
 
   - name: "Xiaomi Plug [faker]"
 
-    unique_id: lan_iot_faker_xiaomi_plug
+    unique_id: lan_iot_demo_xiaomi_plug
 
-    object_id: faker_xiaomi_plug
+    object_id: demo_xiaomi_plug
 
-    state_topic: "home/faker/xiaomi_plug/state"
+    state_topic: "home/demo/xiaomi_plug/state"
 
-    command_topic: "home/faker/xiaomi_plug/set"
+    command_topic: "home/demo/xiaomi_plug/set"
 
     availability:
 
-      - topic: "home/faker/xiaomi_plug/availability"
+      - topic: "home/demo/xiaomi_plug/availability"
 
     payload_available: "online"
 

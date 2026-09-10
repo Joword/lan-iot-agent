@@ -14,6 +14,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/.env"
+  set +a
+fi
 DOCKER_COMPOSE="${REPO_ROOT}/deploy/docker/docker-compose.yml"
 SIF_DIR="${SCRIPT_DIR}/sif"
 DATA_DIR="${SCRIPT_DIR}/data"
@@ -250,22 +256,33 @@ ensure_docker_images() {
   done
 }
 
+# Build one .sif. A `${name}.def` next to this script wins over the image URI —
+# def-file builds need root, so add --fakeroot when we are not root. URI builds
+# (docker:// / docker-daemon://) need no privileges, which is why no pass-through
+# def files are shipped: only add one when it has real %files / %environment /
+# %runscript content.
 build_one_sif() {
   local name="$1"
   local source="$2"
   local out="${SIF_DIR}/${name}.sif"
   local def="${SCRIPT_DIR}/${name}.def"
 
-  if [[ -n "${SIF_BIN}" ]]; then
-    if [[ -f "${def}" ]]; then
-      log "${SIF_BIN} build ${out} <- ${def}"
-      run "${SIF_BIN}" build --force "${out}" "${def}"
-    else
-      log "${SIF_BIN} build ${out} <- ${source}"
-      run "${SIF_BIN}" build --force "${out}" "${source}"
-    fi
-  else
+  if [[ -z "${SIF_BIN}" ]]; then
     log "PLAN: singularity build ${out} ${source}"
+    return 0
+  fi
+
+  if [[ -f "${def}" ]]; then
+    local priv=()
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+      priv=(--fakeroot)
+      log "def build as non-root — using --fakeroot"
+    fi
+    log "${SIF_BIN} build ${out} <- ${def}"
+    run "${SIF_BIN}" build "${priv[@]}" --force "${out}" "${def}"
+  else
+    log "${SIF_BIN} build ${out} <- ${source}"
+    run "${SIF_BIN}" build --force "${out}" "${source}"
   fi
 }
 

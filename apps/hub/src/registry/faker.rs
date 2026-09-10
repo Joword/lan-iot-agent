@@ -22,7 +22,7 @@ fn attrs(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
 pub fn faker_catalog() -> Vec<DeviceEntity> {
     vec![
         DeviceEntity::new(
-            "light.demo_esp32_light",
+            "light.faker_esp32_light",
             EntityType::Light,
             "ESP32 Light [faker]",
             "on",
@@ -34,7 +34,7 @@ pub fn faker_catalog() -> Vec<DeviceEntity> {
             "faker",
         ),
         DeviceEntity::new(
-            "climate.demo_gree_ac",
+            "climate.faker_gree_ac",
             EntityType::Climate,
             "Gree AC [faker]",
             "cool",
@@ -73,7 +73,7 @@ pub fn faker_catalog() -> Vec<DeviceEntity> {
             "faker",
         ),
         DeviceEntity::new(
-            "sensor.demo_esp32_temperature",
+            "sensor.faker_esp32_temperature",
             EntityType::Sensor,
             "ESP32 Temperature [faker]",
             "26.5",
@@ -97,6 +97,10 @@ impl DeviceRegistry {
             // Do not overwrite a live HA entity with the same id.
             if let Some(existing) = self.get(&entity.entity_id).await {
                 if existing.source == "ha" {
+                    tracing::warn!(
+                        entity_id = %entity.entity_id,
+                        "skip faker seed — live HA entity already occupies this id"
+                    );
                     continue;
                 }
             }

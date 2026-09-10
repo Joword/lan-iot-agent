@@ -75,9 +75,15 @@ mod tests {
     }
 
     #[test]
-    fn demo_gree_is_faker() {
-        let (b, f) = infer_brand_meta("climate.demo_gree_ac", "Demo Gree AC [faker]");
+    fn faker_gree_id() {
+        let (b, f) = infer_brand_meta("climate.faker_gree_ac", "Gree AC [faker]");
         assert_eq!(b.as_deref(), Some("gree"));
+        assert!(f);
+    }
+
+    #[test]
+    fn legacy_demo_id_still_faker() {
+        let (_, f) = infer_brand_meta("climate.demo_gree_ac", "Demo Gree AC");
         assert!(f);
     }
 

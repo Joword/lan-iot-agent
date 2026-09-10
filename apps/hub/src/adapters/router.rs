@@ -37,6 +37,36 @@ impl AdapterRouter {
         keys
     }
 
+    pub fn is_configured(&self, source: &str) -> bool {
+        self.adapters
+            .get(source)
+            .is_some_and(|adapter| adapter.is_configured())
+    }
+
+    /// Pull entities from one backend into the registry (`ha` replaces HA rows).
+    pub async fn sync_into(
+        &self,
+        source: &str,
+        registry: &DeviceRegistry,
+    ) -> Result<usize, AdapterError> {
+        let adapter = self
+            .get(source)
+            .ok_or_else(|| AdapterError::NoAdapter(source.to_string()))?;
+        if !adapter.is_configured() {
+            return Err(AdapterError::NotConfigured(source.to_string()));
+        }
+        let entities = adapter.sync().await?;
+        let n = entities.len();
+        if source == "ha" {
+            registry.replace_ha_entities(entities).await;
+        } else {
+            for entity in entities {
+                registry.upsert(entity).await;
+            }
+        }
+        Ok(n)
+    }
+
     pub async fn health_all(&self) -> Vec<AdapterHealth> {
         let mut out = Vec::new();
         for adapter in self.adapters.values() {

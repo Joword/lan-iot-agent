@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 # P4 demo climate entity (HA MQTT faker); used when context has no climate.* device.
-DEFAULT_CLIMATE_ENTITY = "climate.demo_gree_ac"
+DEFAULT_CLIMATE_ENTITY = "climate.faker_gree_ac"
 _DEFAULT_CLIMATE_TEMP = 26.0
 
 # P4 faker Xiaomi light — preferred when message mentions 小米 / xiaomi and no entity given.
@@ -188,7 +188,7 @@ _entity_id_of = entity_id_of
 
 
 def resolve_climate_entity(devices: list[Any] | None = None) -> str:
-    """Prefer a climate.* entity from context; else P4 faker ``climate.demo_gree_ac``."""
+    """Prefer a climate.* entity from context; else faker ``climate.faker_gree_ac``."""
     for device in devices or []:
         entity_id = entity_id_of(device)
         if entity_id and entity_id.lower().startswith("climate."):
@@ -337,7 +337,7 @@ def infer_tools_from_message(
             climate_added = True
             break
 
-    # Vague climate: prefer context climate entity, else demo_gree_ac.
+    # Vague climate: prefer context climate entity, else faker_gree_ac.
     if not climate_added and _CLIMATE_INTENT_RE.search(text):
         entity_id = resolve_climate_entity(devices)
         temp = _extract_temperature(text)
@@ -398,10 +398,11 @@ def infer_tools_from_message(
             device_id = m.group(1)
         else:
             device_id = resolve_companion_id(devices)
-        _add(
-            "companion.command",
-            {"device_id": device_id, "command": companion_command},
-        )
+        args: dict[str, Any] = {"device_id": device_id, "command": companion_command}
+        if companion_command == "notify":
+            args["title"] = "LanIoT"
+            args["body"] = (text or "").strip()[:200] or "Notification from LanIoT"
+        _add("companion.command", args)
 
     return pending
 

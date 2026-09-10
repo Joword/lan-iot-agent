@@ -19,7 +19,7 @@ type RunState = {
 };
 
 const DEFAULT_STEPS_JSON = `[
-  { "entity_id": "light.demo_esp32_light", "action": "turn_off" }
+  { "entity_id": "light.faker_esp32_light", "action": "turn_off" }
 ]`;
 
 async function readHubError(res: Response): Promise<string> {
@@ -241,7 +241,7 @@ export default function ScenesPage() {
               type="text"
               value={formEntityId}
               onChange={(e) => setFormEntityId(e.target.value)}
-              placeholder="light.demo_esp32_light"
+              placeholder="light.faker_esp32_light"
               disabled={saving}
               className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2 font-mono text-sm text-[var(--fg)] placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
             />

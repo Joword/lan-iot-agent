@@ -233,8 +233,8 @@ hub_check "Hub devices" "/api/v1/devices"
 hub_check "Hub scenes" "/api/v1/scenes"
 hub_check "Hub companions" "/api/v1/companions"
 hub_check "Hub MCP tools" "/mcp/tools"
-hub_post_check "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.demo_gree_ac"}}' describe
-hub_post_check "Hub faker light on" "/api/v1/devices/light.demo_esp32_light/actions" '{"action":"turn_on"}' action
+hub_post_check "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.faker_gree_ac"}}' describe
+hub_post_check "Hub faker light on" "/api/v1/devices/light.faker_esp32_light/actions" '{"action":"turn_on"}' action
 hub_post_check "Hub scene sleep_mode" "/api/v1/scenes/sleep_mode/run" '{}' scene
 
 printf '\n'

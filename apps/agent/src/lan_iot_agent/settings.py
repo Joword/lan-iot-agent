@@ -85,6 +85,28 @@ def _env(name: str, default: str | None = None) -> str | None:
     return value
 
 
+def _env_float(name: str) -> float | None:
+    """Parse ``name`` as float; ignore missing or non-numeric values."""
+    raw = _env(name)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _env_int(name: str) -> int | None:
+    """Parse ``name`` as int; ignore missing or non-numeric values."""
+    raw = _env(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def load_settings(
     agent_config: str | Path | None = None,
     llm_config: str | Path | None = None,
@@ -157,6 +179,13 @@ def load_settings(
     # HUB_MCP_URL is the preferred name; MCP_URL kept as alias.
     if mcp_url := _env("HUB_MCP_URL") or _env("MCP_URL"):
         settings.hub.mcp_url = mcp_url.rstrip("/")
+
+    # Retry/timeout knobs: an absent Hub costs timeout × retries per call, which
+    # the unit suite turns down so the degraded paths stay fast.
+    if (hub_timeout := _env_float("HUB_TIMEOUT_SECONDS")) is not None:
+        settings.hub.timeout_seconds = hub_timeout
+    if (hub_retries := _env_int("HUB_MAX_RETRIES")) is not None:
+        settings.hub.max_retries = max(1, hub_retries)
 
     if provider := _env("LLM_PROVIDER"):
         settings.llm.provider = provider

@@ -6,7 +6,18 @@ sees skills that Agent can execute via Hub MCP — never HA directly.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
+import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+_HUB_TOOLS_TTL_SECS = 60.0
+_HUB_TOOLS_CACHE: list[dict[str, Any]] | None = None
+_HUB_TOOLS_AT = 0.0
+_hub_tools_lock = asyncio.Lock()
 
 # JSON Schema fragments (OpenAI ``function.parameters``).
 _DEVICES_LIST_PARAMS: dict[str, Any] = {
@@ -30,7 +41,7 @@ _DEVICES_GET_STATE_PARAMS: dict[str, Any] = {
     "properties": {
         "entity_id": {
             "type": "string",
-            "description": "Exact HA/Hub entity id, e.g. light.demo_esp32_light",
+            "description": "Exact HA/Hub entity id, e.g. light.faker_esp32_light",
         },
     },
     "additionalProperties": False,
@@ -75,7 +86,7 @@ _CLIMATE_SET_PARAMS: dict[str, Any] = {
     "properties": {
         "entity_id": {
             "type": "string",
-            "description": "Climate entity id, e.g. climate.demo_gree_ac",
+            "description": "Climate entity id, e.g. climate.faker_gree_ac",
         },
         "temperature": {
             "type": "number",
@@ -95,7 +106,7 @@ _LIGHTS_CONTROL_PARAMS: dict[str, Any] = {
     "properties": {
         "entity_id": {
             "type": "string",
-            "description": "Light entity id, e.g. light.demo_esp32_light",
+            "description": "Light entity id, e.g. light.faker_esp32_light",
         },
         "on": {
             "type": "boolean",
@@ -133,7 +144,15 @@ _COMPANION_COMMAND_PARAMS: dict[str, Any] = {
         },
         "command": {
             "type": "string",
-            "description": "Command forwarded to Companion (ping, notify, …)",
+            "description": "Command forwarded to Companion (ping, notify, lock, …)",
+        },
+        "title": {
+            "type": "string",
+            "description": "Optional notify title",
+        },
+        "body": {
+            "type": "string",
+            "description": "Optional notify body / message",
         },
     },
     "additionalProperties": False,
@@ -186,27 +205,142 @@ _HUB_TOOL_DEFS: tuple[tuple[str, str, dict[str, Any]], ...] = (
 )
 
 
-def hub_tool_schemas() -> list[dict[str, Any]]:
-    """OpenAI / LiteLLM ``tools`` list for chat completions."""
-    tools: list[dict[str, Any]] = []
-    for name, description, parameters in _HUB_TOOL_DEFS:
-        tools.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": description,
-                    "parameters": parameters,
-                },
-            }
+def _openai_tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
+    """One OpenAI/LiteLLM function-tool descriptor."""
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": parameters,
+        },
+    }
+
+
+def _static_tool_schemas() -> list[dict[str, Any]]:
+    """Built-in catalog — used when Hub is down or GET /mcp/tools fails."""
+    return [
+        _openai_tool(name, description, parameters)
+        for name, description, parameters in _HUB_TOOL_DEFS
+    ]
+
+
+def tools_from_hub_catalog(payload: Any) -> list[dict[str, Any]]:
+    """Convert Hub ``GET /mcp/tools`` (or JSON-RPC tools/list) into OpenAI tools."""
+    raw: Any = payload
+    if isinstance(payload, dict):
+        if isinstance(payload.get("tools"), list):
+            raw = payload["tools"]
+        elif isinstance(payload.get("result"), dict) and isinstance(
+            payload["result"].get("tools"), list
+        ):
+            raw = payload["result"]["tools"]
+        elif isinstance(payload.get("data"), dict) and isinstance(
+            payload["data"].get("tools"), list
+        ):
+            raw = payload["data"]["tools"]
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        description = str(item.get("description") or name)
+        parameters = (
+            item.get("inputSchema")
+            or item.get("input_schema")
+            or item.get("parameters")
+            or {"type": "object", "properties": {}}
         )
-    return tools
+        if not isinstance(parameters, dict):
+            parameters = {"type": "object", "properties": {}}
+        out.append(_openai_tool(name, description, parameters))
+    return out
+
+
+def hub_tool_schemas() -> list[dict[str, Any]]:
+    """OpenAI / LiteLLM ``tools`` list (Hub catalog when refreshed, else static)."""
+    return list(_HUB_TOOLS_CACHE or _static_tool_schemas())
 
 
 def hub_tool_names() -> frozenset[str]:
-    """Frozen set of Hub MCP tool names exposed to the LLM."""
+    """Frozen set of static Hub MCP tool names (fallback allow-list)."""
     return frozenset(name for name, _, _ in _HUB_TOOL_DEFS)
 
 
-# Allowed MCP tools the LLM may invoke (excludes internal Agent helpers).
+def allowed_llm_tools() -> frozenset[str]:
+    """Tool names the LLM may invoke — live Hub catalog if cached."""
+    return frozenset(t["function"]["name"] for t in hub_tool_schemas())
+
+
+def refresh_enabled() -> bool:
+    """False when ``HUB_TOOL_CATALOG_REFRESH`` is off (tests, air-gapped)."""
+    raw = os.environ.get("HUB_TOOL_CATALOG_REFRESH")
+    if raw is None:
+        return True
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def reset_hub_tool_cache() -> None:
+    """Drop the cached catalog (test isolation; next refresh re-fetches)."""
+    global _HUB_TOOLS_CACHE, _HUB_TOOLS_AT
+    _HUB_TOOLS_CACHE = None
+    _HUB_TOOLS_AT = 0.0
+
+
+async def refresh_hub_tool_schemas(*, force: bool = False) -> list[dict[str, Any]]:
+    """GET Hub /mcp/tools and cache as OpenAI tools. Static fallback on failure."""
+    global _HUB_TOOLS_CACHE, _HUB_TOOLS_AT
+    now = time.monotonic()
+    if (
+        not force
+        and _HUB_TOOLS_CACHE is not None
+        and (now - _HUB_TOOLS_AT) < _HUB_TOOLS_TTL_SECS
+    ):
+        return list(_HUB_TOOLS_CACHE)
+    async with _hub_tools_lock:
+        now = time.monotonic()
+        if (
+            not force
+            and _HUB_TOOLS_CACHE is not None
+            and (now - _HUB_TOOLS_AT) < _HUB_TOOLS_TTL_SECS
+        ):
+            return list(_HUB_TOOLS_CACHE)
+        converted: list[dict[str, Any]] = []
+        if refresh_enabled():
+            try:
+                import httpx
+                from lan_iot_agent.settings import get_settings
+
+                base = str(get_settings().hub.mcp_url).rstrip("/")
+                url = f"{base}/tools"
+                # trust_env=False: Hub is on the LAN/loopback. httpx would
+                # otherwise take the Windows registry proxy (urllib
+                # getproxies) and 502 every call.
+                async with httpx.AsyncClient(timeout=2.0, trust_env=False) as client:
+                    response = await client.get(url)
+                if response.status_code == 200:
+                    converted = tools_from_hub_catalog(response.json())
+            except Exception as exc:  # noqa: BLE001 — Hub down is normal offline
+                logger.debug("Hub tool catalog refresh failed: %s", exc)
+        if converted:
+            _HUB_TOOLS_CACHE = converted
+            _HUB_TOOLS_AT = now
+            logger.info(
+                "Hub MCP tool catalog (%d): %s",
+                len(converted),
+                ", ".join(sorted(t["function"]["name"] for t in converted)),
+            )
+            return list(converted)
+        # Cache the static catalog too, so a down Hub costs one GET per TTL
+        # instead of one per turn (refresh runs inside build_context).
+        _HUB_TOOLS_CACHE = _static_tool_schemas()
+        _HUB_TOOLS_AT = now
+        return list(_HUB_TOOLS_CACHE)
+
+
+# Allowed MCP tools the LLM may invoke (static fallback; live set via allowed_llm_tools()).
 ALLOWED_LLM_TOOLS = hub_tool_names()

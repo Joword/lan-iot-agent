@@ -151,7 +151,16 @@ impl DeviceRegistry {
     pub async fn replace_ha_entities(&self, entities: Vec<DeviceEntity>) {
         let mut guard = self.entities.write().await;
         guard.retain(|_, e| e.source != "ha");
+        // Live HA wins an entity_id collision; the faker stub is dropped.
         for entity in entities {
+            if let Some(existing) = guard.get(&entity.entity_id) {
+                if existing.source == "faker" || existing.is_faker {
+                    tracing::warn!(
+                        entity_id = %entity.entity_id,
+                        "HA entity replaces faker stub with the same id"
+                    );
+                }
+            }
             guard.insert(entity.entity_id.clone(), entity);
         }
     }

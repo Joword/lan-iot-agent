@@ -27,7 +27,11 @@ from lan_iot_agent.tools.capabilities import (
     validate_against_describe,
 )
 from lan_iot_agent.tools.mcp import McpClient, extract_devices_from_mcp
-from lan_iot_agent.tools.schemas import ALLOWED_LLM_TOOLS, hub_tool_schemas
+from lan_iot_agent.tools.schemas import (
+    allowed_llm_tools,
+    hub_tool_schemas,
+    refresh_hub_tool_schemas,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,7 @@ async def build_context(state: AgentState) -> AgentState:
     scenes = list(state.get("request_scenes") or [])
     errors = list(state.get("errors") or [])
     meta = dict(state.get("meta") or {})
+    await refresh_hub_tool_schemas()
 
     if not devices:
         client = McpClient()
@@ -148,7 +153,7 @@ def _pending_from_llm_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
     pending: list[dict[str, Any]] = []
     for tc in tool_calls:
         name = getattr(tc, "name", None) or (tc.get("name") if isinstance(tc, dict) else None)
-        if not name or name not in ALLOWED_LLM_TOOLS:
+        if not name or name not in allowed_llm_tools():
             continue
         arguments = getattr(tc, "arguments", None)
         if arguments is None and isinstance(tc, dict):

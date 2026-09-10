@@ -113,7 +113,11 @@ class CommandServer(
                             .put("accepted", false)
                             .put("command", "unlock")
                             .put("locked", locked)
-                            .put("error", "unlock_not_supported"),
+                            .put("error", "unlock_not_supported")
+                            .put(
+                                "note",
+                                "Android cannot unlock without credentials / Device Owner",
+                            ),
                     )
 
                 else ->

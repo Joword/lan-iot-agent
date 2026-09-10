@@ -62,8 +62,8 @@ pub async fn list_devices(
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, Json<DeviceListResponse>) {
     // Best-effort refresh if cache empty and HA configured.
-    if state.registry.len().await == 0 && state.ha.is_configured() {
-        if let Err(e) = state.ha.sync_registry(&state.registry).await {
+    if state.registry.len().await == 0 && state.adapters.is_configured("ha") {
+        if let Err(e) = state.adapters.sync_into("ha", &state.registry).await {
             tracing::warn!(error = %e, "on-demand HA sync failed");
             return (
                 StatusCode::OK,
@@ -81,9 +81,9 @@ pub async fn list_devices(
     let ha_available = matches!(
         *state.ha_status.read().await,
         crate::adapters::ha::HaConnectionStatus::Connected
-    ) || (!devices.is_empty() && state.ha.is_configured());
+    ) || (!devices.is_empty() && state.adapters.is_configured("ha"));
 
-    let warning = if !state.ha.is_configured() {
+    let warning = if !state.adapters.is_configured("ha") {
         if devices.iter().any(|d| d.is_faker) {
             Some(
                 "HA not configured — serving in-memory faker brand devices (SEED_FAKER_DEVICES). Swap with real HA entities later."
@@ -109,7 +109,7 @@ pub async fn list_devices(
     )
 }
 
-/// GET /api/v1/devices/:id  (id = entity_id, e.g. light.demo_esp32_light)
+/// GET /api/v1/devices/:id  (id = entity_id, e.g. light.faker_esp32_light)
 pub async fn get_device(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,

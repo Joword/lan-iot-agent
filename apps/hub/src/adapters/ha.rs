@@ -309,6 +309,10 @@ impl DeviceAdapter for HaAdapter {
         "ha"
     }
 
+    fn is_configured(&self) -> bool {
+        !self.base_url.is_empty() && !self.token.is_empty()
+    }
+
     async fn health(&self) -> AdapterHealth {
         if !self.is_configured() {
             return AdapterHealth {

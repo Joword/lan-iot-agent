@@ -12,9 +12,9 @@
 
 #   climate.demo_gree_ac
 
-#   light.faker_xiaomi_bulb
+#   light.demo_xiaomi_bulb
 
-#   switch.faker_xiaomi_plug
+#   switch.demo_xiaomi_plug
 
 
 
@@ -58,17 +58,17 @@ pub "home/demo/gree_ac/current_temp" "28.5"
 
 echo "=== Xiaomi Bulb [faker] ==="
 
-pub "home/faker/xiaomi_bulb/availability" "online"
+pub "home/demo/xiaomi_bulb/availability" "online"
 
-pub "home/faker/xiaomi_bulb/state" '{"state":"OFF","brightness":128}'
+pub "home/demo/xiaomi_bulb/state" '{"state":"OFF","brightness":128}'
 
 
 
 echo "=== Xiaomi Plug [faker] ==="
 
-pub "home/faker/xiaomi_plug/availability" "online"
+pub "home/demo/xiaomi_plug/availability" "online"
 
-pub "home/faker/xiaomi_plug/state" "ON"
+pub "home/demo/xiaomi_plug/state" "ON"
 
 
 
@@ -86,6 +86,6 @@ echo "Done. Verify:"
 
 echo "  curl -s http://127.0.0.1:3000/api/v1/devices"
 
-echo "Expect faker entity_ids: demo_esp32_*, demo_gree_ac, faker_xiaomi_*"
+echo "Expect HA MQTT entity_ids: demo_esp32_*, demo_gree_ac, demo_xiaomi_* (faker_* is Hub-internal)"
 
 

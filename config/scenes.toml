@@ -1,12 +1,25 @@
-# LanIoT Hub — multi-brand faker scenes (P4/P5)
+# LanIoT Hub — multi-brand scenes (faker + HA MQTT)
 # Loaded at Hub startup; missing entities are skipped (no-op) when a scene runs.
 # Override path with SCENES_CONFIG.
-# Swap path: replace entity_ids with real HA entities when hardware is paired.
+#
+# Two id families exist and only one is usually present:
+#   *.faker_*  in-memory Hub stubs (SEED_FAKER_DEVICES)
+#   *.demo_*   HA MQTT fixtures (deploy/docker/homeassistant/mqtt.yaml)
+# Both are listed so a scene works either way; absent ids report as skipped.
+#
+# Mongo persists scenes on first boot. Editing this file does NOT update an
+# existing Mongo `scenes` collection — set SCENES_RESEED=1 once to overwrite.
+#
+# Swap path: replace these with real HA entities when hardware is paired.
 
 [[scenes]]
 id = "sleep_mode"
 name = "Sleep Mode"
-description = "Multi-brand bedtime: ESP32 + Xiaomi lights off, Gree AC off [faker]"
+description = "Multi-brand bedtime: ESP32 + Xiaomi lights off, Gree AC off"
+
+[[scenes.actions]]
+entity_id = "light.faker_esp32_light"
+action = "turn_off"
 
 [[scenes.actions]]
 entity_id = "light.demo_esp32_light"
@@ -17,8 +30,21 @@ entity_id = "light.faker_xiaomi_bulb"
 action = "turn_off"
 
 [[scenes.actions]]
+entity_id = "light.demo_xiaomi_bulb"
+action = "turn_off"
+
+[[scenes.actions]]
 entity_id = "switch.faker_xiaomi_plug"
 action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "switch.demo_xiaomi_plug"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "climate.faker_gree_ac"
+action = "set_hvac_mode"
+params = { hvac_mode = "off" }
 
 [[scenes.actions]]
 entity_id = "climate.demo_gree_ac"
@@ -28,7 +54,11 @@ params = { hvac_mode = "off" }
 [[scenes]]
 id = "away_mode"
 name = "Away Mode"
-description = "Leaving home: turn off lights/plug and set Gree cool 26°C [faker]"
+description = "Leaving home: turn off lights/plug and set Gree cool 26°C"
+
+[[scenes.actions]]
+entity_id = "light.faker_esp32_light"
+action = "turn_off"
 
 [[scenes.actions]]
 entity_id = "light.demo_esp32_light"
@@ -39,8 +69,21 @@ entity_id = "light.faker_xiaomi_bulb"
 action = "turn_off"
 
 [[scenes.actions]]
+entity_id = "light.demo_xiaomi_bulb"
+action = "turn_off"
+
+[[scenes.actions]]
 entity_id = "switch.faker_xiaomi_plug"
 action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "switch.demo_xiaomi_plug"
+action = "turn_off"
+
+[[scenes.actions]]
+entity_id = "climate.faker_gree_ac"
+action = "set_temperature"
+params = { temperature = 26.0 }
 
 [[scenes.actions]]
 entity_id = "climate.demo_gree_ac"

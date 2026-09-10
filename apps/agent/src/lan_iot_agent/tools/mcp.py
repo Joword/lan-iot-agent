@@ -70,7 +70,9 @@ class McpClient:
         backoff = self.settings.retry_backoff_seconds
         last_error: str | None = None
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        # trust_env=False: Hub is on the LAN/loopback. httpx would otherwise take
+        # the Windows registry proxy (urllib getproxies) and 502 every call.
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             for attempt in range(1, attempts + 1):
                 try:
                     response = await client.post(url, json=payload)
@@ -122,7 +124,7 @@ class McpClient:
         backoff = self.settings.retry_backoff_seconds
         last_error: str | None = None
 
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             for attempt in range(1, attempts + 1):
                 try:
                     response = await client.get(url)

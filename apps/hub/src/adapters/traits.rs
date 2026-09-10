@@ -43,6 +43,11 @@ pub trait DeviceAdapter: Send + Sync {
     /// Stable source key written onto `DeviceEntity.source` (`ha`, `faker`, …).
     fn source_id(&self) -> &str;
 
+    /// Whether this backend is configured (credentials / URL present). Default true.
+    fn is_configured(&self) -> bool {
+        true
+    }
+
     async fn health(&self) -> AdapterHealth;
 
     /// Pull entities from the backend (HA sync). Faker may return empty —

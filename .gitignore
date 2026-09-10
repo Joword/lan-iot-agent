@@ -14,6 +14,7 @@ __pycache__/
 .mypy_cache/
 .vscode/
 docs/
+.github/
 
 # Env / secrets
 .env
@@ -39,10 +40,14 @@ ollama-data/
 **/readme.md
 !/readme.md
 
-# Singularity / Apptainer (P7) — track only deploy.sh
-deploy/singularity/**
-deploy/singularity/*.def
-!deploy/singularity/deploy.sh
+.gradle/
+local.properties
+*.iml
+
+# Singularity / Apptainer (P7) — ignore runtime artifacts, keep .def + deploy.sh
+deploy/singularity/sif/
+deploy/singularity/data/
+deploy/singularity/.env
 
 # Next / TS
 next-env.d.ts

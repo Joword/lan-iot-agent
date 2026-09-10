@@ -257,7 +257,7 @@ function Test-HubPost {
     }
 }
 
-Test-HubPost "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.demo_gree_ac"}}' {
+Test-HubPost "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe","arguments":{"entity_id":"climate.faker_gree_ac"}}' {
     param($r)
     $doc = $r.Json.data
     if ($null -eq $doc) { $doc = $r.Json }
@@ -270,7 +270,7 @@ Test-HubPost "Hub describe faker climate" "/mcp/call" '{"name":"devices.describe
     }
 } -SkipMissing
 
-Test-HubPost "Hub faker light on" "/api/v1/devices/light.demo_esp32_light/actions" '{"action":"turn_on"}' {
+Test-HubPost "Hub faker light on" "/api/v1/devices/light.faker_esp32_light/actions" '{"action":"turn_on"}' {
     param($r)
     if ($r.Json.ok -eq $true) {
         "ok entity=$($r.Json.entity_id) action=$($r.Json.action)"

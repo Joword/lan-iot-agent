@@ -90,7 +90,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             json!({
                 "type": "hello",
                 "service": "hub",
-                "ha_configured": state.ha.is_configured(),
+                "ha_configured": state.adapters.is_configured("ha"),
                 "agent_url": state.config.agent_url,
                 "auth_required": state.config.auth_required,
             })

@@ -4,7 +4,8 @@
 //! device's `base_url` — HA does not manage this path.
 //!
 //! On startup: load collection `companions` from the shared Mongo store. If
-//! empty, seed `companion.demo_pc` → `http://127.0.0.1:9876`. When Mongo is
+//! empty, seed `companion.demo_pc` → `http://127.0.0.1:9876` until the
+//! Windows listener registers its LAN `base_url`. When Mongo is
 //! down, Hub still runs from the demo seed in memory only.
 //!
 //! Demo Companion may be offline; callers get a structured unreachable error
@@ -213,22 +214,30 @@ impl CompanionAdapter {
         Ok(())
     }
 
-    /// POST `{base_url}/command` with `{"command":…}`. Graceful if Companion is down.
+    /// POST `{base_url}/command` with `{"command":…}` plus optional extra fields.
+    /// Companion HTTP 4xx or `accepted:false` becomes `ok: false` (not a Hub crash).
     pub async fn send_command(
         &self,
         device_id: &str,
         command: &str,
+        extra: Option<&Value>,
     ) -> Result<CommandResult, CompanionError> {
         let device = self
             .get(device_id)
             .await
             .ok_or_else(|| CompanionError::NotFound(device_id.to_string()))?;
 
-        let url = format!(
-            "{}/command",
-            device.base_url.trim_end_matches('/')
-        );
-        let body = json!({ "command": command });
+        let url = format!("{}/command", device.base_url.trim_end_matches('/'));
+        let mut body = json!({ "command": command });
+        if let Some(Value::Object(map)) = extra {
+            if let Some(obj) = body.as_object_mut() {
+                for (k, v) in map {
+                    if k != "command" && k != "device_id" && k != "id" {
+                        obj.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
 
         match self
             .client
@@ -241,23 +250,35 @@ impl CompanionAdapter {
             Ok(resp) => {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
-                if !status.is_success() {
-                    return Err(CompanionError::Api {
-                        status: status.as_u16(),
-                        body: text,
-                    });
-                }
-                let response = if text.trim().is_empty() {
-                    Some(json!({ "accepted": true }))
+                let parsed: Value = if text.trim().is_empty() {
+                    json!({ "accepted": status.is_success() })
                 } else {
-                    serde_json::from_str(&text).ok().or(Some(json!({ "raw": text })))
+                    serde_json::from_str(&text).unwrap_or_else(|_| json!({ "raw": text }))
                 };
+                let accepted = parsed
+                    .get("accepted")
+                    .and_then(Value::as_bool)
+                    .or_else(|| parsed.get("ok").and_then(Value::as_bool))
+                    .unwrap_or(status.is_success());
+                let err = parsed
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        if status.is_success() && accepted {
+                            None
+                        } else if !status.is_success() {
+                            Some(format!("Companion HTTP {status}: {text}"))
+                        } else {
+                            Some("companion rejected command".into())
+                        }
+                    });
                 Ok(CommandResult {
-                    ok: true,
+                    ok: status.is_success() && accepted,
                     device_id: device_id.to_string(),
                     command: command.to_string(),
-                    response,
-                    error: None,
+                    response: Some(parsed),
+                    error: err.filter(|_| !(status.is_success() && accepted)),
                 })
             }
             Err(e) => {

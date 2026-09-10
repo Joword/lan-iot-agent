@@ -19,7 +19,11 @@ from lan_iot_agent.tools.keywords import (
     infer_tools_from_message,
     is_controllable_entity,
 )
-from lan_iot_agent.tools.schemas import ALLOWED_LLM_TOOLS, hub_tool_schemas
+from lan_iot_agent.tools.schemas import (
+    ALLOWED_LLM_TOOLS,
+    hub_tool_schemas,
+    tools_from_hub_catalog,
+)
 
 
 def test_settings_loads() -> None:
@@ -30,6 +34,37 @@ def test_settings_loads() -> None:
     assert settings.hub.mcp_url.endswith("/mcp") or "/mcp" in settings.hub.mcp_url
     assert settings.llm.provider
     assert settings.llm.max_tool_iterations >= 1
+
+
+def test_tools_from_hub_catalog() -> None:
+    """Hub catalog payloads convert to OpenAI tools; junk yields nothing."""
+    payload = {
+        "tools": [
+            {
+                "name": "devices.list",
+                "description": "from hub",
+                "inputSchema": {"type": "object", "properties": {}},
+            }
+        ]
+    }
+    catalog = tools_from_hub_catalog(payload)
+    assert catalog[0]["type"] == "function"
+    assert catalog[0]["function"]["name"] == "devices.list"
+    assert catalog[0]["function"]["description"] == "from hub"
+
+    # JSON-RPC tools/list and REST envelopes carry the same list one level down.
+    assert tools_from_hub_catalog({"result": payload}) == catalog
+    assert tools_from_hub_catalog({"data": payload}) == catalog
+    assert tools_from_hub_catalog(payload["tools"]) == catalog
+
+    # Unnamed / non-dict / unparseable entries are dropped, not raised on.
+    assert not tools_from_hub_catalog({"tools": [{"description": "no name"}, "junk"]})
+    assert not tools_from_hub_catalog({"unexpected": 1})
+    assert not tools_from_hub_catalog(None)
+
+    # Missing inputSchema still produces a usable object schema.
+    bare = tools_from_hub_catalog({"tools": [{"name": "x.y"}]})
+    assert bare[0]["function"]["parameters"]["type"] == "object"
 
 
 def test_hub_tool_schemas() -> None:
@@ -44,6 +79,43 @@ def test_hub_tool_schemas() -> None:
         params = tool["function"]["parameters"]
         assert params["type"] == "object"
         assert "properties" in params
+
+
+def test_refresh_hub_tool_schemas_prefers_live_catalog() -> None:
+    """A reachable Hub replaces the static catalog; a down Hub falls back."""
+
+    async def _run() -> None:
+        from lan_iot_agent.tools import schemas
+
+        live = {
+            "tools": [
+                {"name": "devices.list", "description": "live", "inputSchema": {}},
+                {"name": "hub.extra", "description": "new tool", "inputSchema": {}},
+            ]
+        }
+        response = MagicMock()
+        response.status_code = 200
+        response.json = MagicMock(return_value=live)
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=response)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=client) as client_factory:
+            with patch.dict("os.environ", {"HUB_TOOL_CATALOG_REFRESH": "1"}):
+                tools = await schemas.refresh_hub_tool_schemas(force=True)
+        # Hub sits on the LAN/loopback — never through an ambient proxy.
+        assert client_factory.call_args.kwargs["trust_env"] is False
+        assert {t["function"]["name"] for t in tools} == {"devices.list", "hub.extra"}
+        assert "hub.extra" in schemas.allowed_llm_tools()
+
+        schemas.reset_hub_tool_cache()
+        with patch("httpx.AsyncClient", side_effect=OSError("connection refused")):
+            with patch.dict("os.environ", {"HUB_TOOL_CATALOG_REFRESH": "1"}):
+                fallback = await schemas.refresh_hub_tool_schemas(force=True)
+        assert {t["function"]["name"] for t in fallback} == set(ALLOWED_LLM_TOOLS)
+
+    asyncio.run(_run())
 
 
 def test_system_prompt_iot_rules() -> None:
@@ -74,7 +146,7 @@ def test_parse_tool_calls_openai_shape() -> None:
                 "type": "function",
                 "function": {
                     "name": "climate.set",
-                    "arguments": {"entity_id": "climate.demo_gree_ac", "temperature": 26},
+                    "arguments": {"entity_id": "climate.faker_gree_ac", "temperature": 26},
                 },
             },
         ],
@@ -181,7 +253,7 @@ def test_dangerous_intent_detection() -> None:
         assert detect_dangerous_intent(phrase) == PENDING_ACTION_SHUTDOWN_ALL
     assert detect_dangerous_intent("turn off light.demo") is None
     assert is_controllable_entity("light.demo")
-    assert is_controllable_entity("climate.demo_gree_ac")
+    assert is_controllable_entity("climate.faker_gree_ac")
     assert not is_controllable_entity("sensor.temp")
     assert not is_controllable_entity("binary_sensor.door")
 
@@ -235,7 +307,7 @@ def test_shutdown_all_confirmed_calls_mcp() -> None:
                 "devices": [
                     {"entity_id": "light.demo", "name": "Demo"},
                     {"entity_id": "sensor.temp", "name": "Temp"},
-                    {"entity_id": "climate.demo_gree_ac", "name": "AC"},
+                    {"entity_id": "climate.faker_gree_ac", "name": "AC"},
                 ]
             },
         )
@@ -274,7 +346,7 @@ def test_shutdown_all_confirmed_calls_mcp() -> None:
         ]
         assert len(turn_offs) == 2
         entity_ids = {c.args[1]["entity_id"] for c in turn_offs}
-        assert entity_ids == {"light.demo", "climate.demo_gree_ac"}
+        assert entity_ids == {"light.demo", "climate.faker_gree_ac"}
 
     asyncio.run(_run())
 
@@ -413,7 +485,7 @@ def test_validate_control_against_describe() -> None:
     from lan_iot_agent.tools.capabilities import validate_against_describe
 
     describe = {
-        "entity_id": "climate.demo_gree_ac",
+        "entity_id": "climate.faker_gree_ac",
         "summary": {"actions": ["turn_on", "turn_off", "set_temperature", "set_hvac_mode"]},
         "capabilities": [
             {
@@ -438,20 +510,20 @@ def test_validate_control_against_describe() -> None:
     assert (
         validate_against_describe(
             "climate.set",
-            {"entity_id": "climate.demo_gree_ac", "temperature": 26},
+            {"entity_id": "climate.faker_gree_ac", "temperature": 26},
             describe,
         )
         is None
     )
     err = validate_against_describe(
         "devices.control",
-        {"entity_id": "climate.demo_gree_ac", "action": "explode"},
+        {"entity_id": "climate.faker_gree_ac", "action": "explode"},
         describe,
     )
     assert err and "explode" in err
     too_hot = validate_against_describe(
         "climate.set",
-        {"entity_id": "climate.demo_gree_ac", "temperature": 99},
+        {"entity_id": "climate.faker_gree_ac", "temperature": 99},
         describe,
     )
     assert too_hot and "maximum" in too_hot
@@ -470,7 +542,7 @@ def test_format_scene_run_lists_failed_steps() -> None:
             "steps": [
                 {
                     "index": 0,
-                    "entity_id": "light.demo_esp32_light",
+                    "entity_id": "light.faker_esp32_light",
                     "action": "turn_off",
                     "ok": True,
                     "skipped": False,

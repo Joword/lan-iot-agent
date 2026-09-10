@@ -19,6 +19,7 @@ services:
       HA_URL: http://homeassistant:8123
       HA_TOKEN: ${HA_TOKEN:-}
       AGENT_URL: ${AGENT_URL:-http://agent:8000}
+      SEED_FAKER_DEVICES: ${SEED_FAKER_DEVICES:-1}
       AUTH_REQUIRED: ${AUTH_REQUIRED:-false}
       AUTH_SECRET: ${AUTH_SECRET:-}
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
@@ -85,6 +86,25 @@ services:
     depends_on:
       - hub
     restart: unless-stopped
+
+  # `docker compose --profile smoke up --abort-on-container-exit`
+  # Runs scripts/smoke.sh against Hub+Agent once they are healthy.
+  smoke:
+    image: alpine:3.20
+    profiles: ["smoke"]
+    depends_on:
+      hub:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    environment:
+      HUB_URL: http://hub:3000
+      AGENT_URL: http://agent:8000
+    volumes:
+      - ../../scripts/smoke.sh:/smoke.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "apk add --no-cache bash curl jq >/dev/null && bash /smoke.sh"
 
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
