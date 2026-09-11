@@ -1,144 +1,167 @@
-# LanIoT Agent
+# LanIoT
 
-LAN-first IoT control: Next.js UI → Rust Hub (REST / WS / MCP) → Python Agent + LLM. Home Assistant is one southbound adapter, not the product. Companion PC/phone talks to Hub over HTTP only.
+A LAN-first home-control console: one sentence or one tap to switch lights, set the AC, run a scene, notify a PC, or lock it.
 
-This file is the **only public README**. Nested READMEs and `docs/` are local notes (gitignored). Annotations below are for people hacking on the repo.
+Home Assistant, MQTT, and brand clouds are **southbound adapters**, not the product. The product is a **single device surface**, **natural-language control**, and **traffic that stays on the LAN by default**.
 
-## Layout
+## The problem
 
-```
-apps/hub          Rust Axum control plane (AdapterRouter: ha + faker)
-apps/agent        Python FastAPI / LangGraph (calls Hub MCP only)
-apps/ui           Next.js (port 3001 in Compose, 3000 in next dev)
-companions/       Windows (9876) + Android (9877) HTTP listeners
-firmware/esp32/   MQTT stubs — go through HA, not Hub-direct
-deploy/docker     day-to-day Compose
-deploy/singularity  Linux .sif (not for Windows)
-config/           hub.toml, agent.toml, llm.toml, scenes.toml
-scripts/          smoke.ps1 / smoke.sh
-```
+Home devices usually live in three stacks that do not talk to each other:
 
-## Bring-up
+- Lights and climate sit in Home Assistant or a vendor app
+- The household PC or phone is not a first-class device the hub can command
+- Natural-language control often calls HA or a cloud API directly, so permissions and failures are hard to bound
 
-Compose (faker stubs on by default via `SEED_FAKER_DEVICES=1`):
+Swap a brand, and the logic layer changes. If HA is down, the demo dies. Locking a Windows session still means walking over to the machine.
+
+LanIoT collapses that into one job: **a hub on the LAN that owns devices, scenes, and companions, and exposes a stable API. The intelligence layer (Agent) talks only to the Hub — never to Home Assistant.**
+
+## Who it is for
+
+- People who need a **Windows / lab / no-public-internet** demo that puts multi-brand IoT and a PC on the same console
+- Teams that want “natural language → real action” without binding the LLM to Home Assistant
+- Developers who will later swap faker stubs for real Xiaomi / Gree / ESP32 gear (changing Hub code per brand is not the goal)
+
+The default is **demo mode** (no forced login). This is not a consumer cloud app and not a replacement for Home Assistant.
+
+## What you can do
+
+| Capability | What you actually see |
+|------------|------------------------|
+| Unified devices | Lights, climate, plugs, sensors — with source and allowed actions, not a page per brand |
+| Natural language | “Set the AC to 26°C”, “away mode” → Agent calls Hub tools. No model? Keyword shortcuts still run |
+| Scenes | Sleep / away: lights off, plug off, AC set. Missing devices are skipped; the scene does not abort |
+| Companion | A Windows PC or Android phone registers with the Hub: ping, notify, lock session (lock is real; this UI cannot unlock) |
+| Pluggable southbound | No HA? In-memory stubs still run the full path. With HA, the same API applies; brands enter through HA integrations |
+
+The Agent **only calls Hub MCP/REST**. A new light brand means enabling it in HA, not rewriting the Agent.
+
+## How this differs
+
+| | Vendor app | Home Assistant alone | Cloud voice assistant | **LanIoT** |
+|--|------------|----------------------|------------------------|------------|
+| Device source | One brand | HA integrations | Vendor + cloud account | Hub registry (HA **or** demo stubs) |
+| LLM talks to | — | Often HA / REST directly | Cloud | **Hub only** |
+| PC / phone as a device | No | Not first-class | Rarely | Companion over Hub HTTP |
+| Works without cloud | Depends | Yes | No | **Yes** (optional local or cloud LLM) |
+| Works without HA | No | — | Yes | **Yes** (faker stubs) |
+
+## Degradation is a feature
+
+- **No Home Assistant** — demo stubs still list, control, and run scenes
+- **No LLM** — keyword routing still drives Hub tools (`pip install -e ".[llm]"` only when you want LiteLLM)
+- **Companion offline** — the Hub returns a visible failure (`ok: false`), not a fake success
+- **HA comes back later** — live HA entities win if an id collides with a stub
+
+## Data and privacy
+
+- Default path is **LAN / loopback**. Hub, UI, and Agent do not require a vendor cloud.
+- The Agent **never calls Home Assistant**. Only the Hub’s HA adapter does, when configured.
+- Demo auth is **off** (`AUTH_REQUIRED=false`). Do not expose the ports on a hostile network.
+- Packets leave the LAN only if **you** point the LLM at a cloud provider. Local Ollama keeps completions on-site.
+
+## Safety
+
+**Companion Lock really locks the Windows session.** There is no Unlock in this product; you need the OS password. Do not click Lock on a shared demo machine unless that is the point. Tests and dry runs should set `COMPANION_DRY_RUN=1`.
+
+## What is in scope vs not
+
+**In the demo today:** multi-brand stubs, scenes, optional natural language, PC/phone as companions, Docker one-command bring-up.
+
+**Intentionally not:** public-account auth as the default, unlock-from-app, replacing Home Assistant, a Windows tray app.
+
+**Next (product, not a public roadmap):** point HA at real Xiaomi / Gree / ESP32 devices; walk the UI and Companion on a clean machine.
+
+## Three beats (about two minutes)
+
+1. **Bedtime** — open the console → Sleep Mode → lights/plug off, AC off (or skipped if that device is absent).
+2. **Leaving** — say or type away mode → cool/off setpoints run on whatever climate exists.
+3. **At the desk** — Windows Companion stays registered → Ping or Notify from the console. Skip Lock unless you mean it.
+
+## Five-minute bring-up
+
+Docker is enough. An empty `HA_TOKEN` is fine (in-memory demo devices).
 
 ```bash
 cd deploy/docker
-cp .env.example .env   # HA_TOKEN empty is fine for faker-only
+cp .env.example .env
 docker compose up --build
 ```
 
-| URL | What |
-|-----|------|
-| http://localhost:3000/api/v1/health | Hub |
-| http://localhost:3000/api/v1/devices | registry (`source`, `capabilities`) |
-| http://localhost:8000/health | Agent |
-| http://localhost:3001 | UI |
-| http://localhost:8123 | HA |
-| localhost:1883 | Mosquitto |
-| localhost:27017 | Mongo (`lan_iot`) |
+| Open | What |
+|------|------|
+| http://localhost:3001 | Console (devices, scenes, chat, companions) |
+| http://localhost:3000/api/v1/devices | What the Hub currently sees |
+| http://localhost:8000/health | Agent liveness |
 
-```bash
-docker compose --profile llm up --build          # + Ollama
-docker compose --profile smoke up --abort-on-container-exit   # smoke.sh after healthy
-```
+Optional local LLM: `docker compose --profile llm up --build`.
 
-Linux Singularity: `cd deploy/singularity && cp env.example .env && ./deploy.sh up --llm=local --profile=full`. SIFs land in `sif/` (gitignored). Builds pull image URIs (`docker://`, `docker-daemon://`), which need no root. Dropping a `<service>.def` next to `deploy.sh` overrides the URI, but def-file builds need root — the script adds `--fakeroot` for you. Only add a def when it carries real `%files` / `%environment` / `%runscript`.
-
-Host processes (no Compose):
-
-```powershell
-# Hub — GNU linker on this Windows box
-cd apps/hub
-$env:HA_URL="http://localhost:8123"
-$env:SEED_FAKER_DEVICES="1"
-cargo run --target x86_64-pc-windows-gnu
-
-cd apps/agent
-pip install -e .
-uvicorn lan_iot_agent.main:app --reload --port 8000
-
-cd apps/ui
-cp .env.example .env
-npm install
-npm run dev
-```
-
-## Env (the ones that bite)
-
-| Var | Default | Notes |
-|-----|---------|--------|
-| `SEED_FAKER_DEVICES` | Compose `1`; Hub process: on if HA is unset | In-memory `*.faker_*` stubs. Set `0` when you only want live HA. |
-| `AUTH_REQUIRED` | `false` | **Keep false for the demo.** `true` needs Mongo; UI Pair + Companion `--pair` become mandatory or REST is 401. |
-| `HA_URL` / `HA_TOKEN` | unset | Live HA. Hub still boots without them. |
-| `SCENES_RESEED` | `false` | Re-seed `config/scenes.toml` over an existing Mongo `scenes` collection. |
-| `HUB_TOOL_CATALOG_REFRESH` | `true` | Agent pulls the LLM tool list from `GET {HUB_MCP_URL}/tools`. `0` pins the static catalog (the test suite does this). |
-| `HUB_TIMEOUT_SECONDS` / `HUB_MAX_RETRIES` | `5.0` / `3` | Agent→Hub. An absent Hub costs roughly timeout × retries per call. |
-| `HUB_MCP_URL` | Agent → `http://127.0.0.1:3000/mcp` | Agent never talks to HA. |
-| `COMPANION_DRY_RUN` | unset | Skip Windows toast/lock (tests). |
-
-## Faker ids vs HA MQTT
-
-In-memory faker (scenes, smoke, Agent defaults):
-
-- `light.faker_esp32_light`
-- `climate.faker_gree_ac`
-- `light.faker_xiaomi_bulb`
-- `switch.faker_xiaomi_plug`
-- `sensor.faker_esp32_temperature`
-
-HA MQTT fixtures in `deploy/docker/homeassistant/mqtt.yaml` are all `*.demo_*`. Keep that split when adding fixtures — a shared `entity_id` means one silently replaces the other in the registry. On a collision **live HA wins**: the faker seed is skipped if HA already owns the id, and an HA sync overwrites a faker stub (logged as a warning).
-
-`config/scenes.toml` and the built-in demo scenes list both families, so a scene works whether you booted faker stubs or HA MQTT; absent entities come back as skipped steps. Scenes are persisted to Mongo on first boot, so editing the TOML afterwards does nothing — set `SCENES_RESEED=1` for one boot to overwrite the seeded ids (scenes you authored under other ids survive).
-
-Real brand gear: enable the HA integration (xiaomi_miot / gree / MQTT ESP32). Hub code does not change per brand.
-
-## Companion
-
-Windows (binds `0.0.0.0:9876`, registers on Hub):
+Windows Companion (Hub already on port 3000):
 
 ```powershell
 python companions\windows\server.py --hub http://localhost:3000
-# Hub in Docker:
-python companions\windows\server.py --hub http://localhost:3000 --base-url http://host.docker.internal:9876
-# Inbound blocked:
-python companions\windows\server.py --hub http://localhost:3000 --open-firewall   # Administrator
 ```
 
-There is no tray app — leave the console running. `Lock` really locks the session. **No Unlock** from UI or OS without credentials.
-
-Android: `cd companions/android && ./gradlew assembleDebug` (JDK 17). Pair advertises a real WLAN IPv4. Emulator registers `http://127.0.0.1:9877` — run `adb forward tcp:9877 tcp:9877`. Hub URL from the emulator is still `http://10.0.2.2:3000`.
-
-## Agent / Hub contract
-
-Agent LLM tools prefer live `GET {HUB_MCP_URL}/tools`. If Hub is down, Agent falls back to the static catalog in `apps/agent/.../schemas.py`. Keyword stubs still work without an LLM (`pip install -e ".[llm]"` for LiteLLM).
-
-Northbound device I/O goes through `AdapterRouter` (`ha` | `faker`). Do not add new `state.ha` special cases.
-
-Every Agent→Hub `httpx.AsyncClient` passes `trust_env=False`. Hub is on the LAN or loopback, and httpx's default `trust_env=True` picks up the **Windows registry** proxy via `urllib.getproxies()` — not just `HTTP_PROXY` — so a machine with a system proxy configured gets a `502` on every Hub call, three times over with retries. Keep the flag on any new client.
-
-## Tests / CI
+If Hub runs in Docker, advertise a URL the container can dial:
 
 ```powershell
-cd apps\agent
-.\.venv\Scripts\python.exe -m pytest -q
-
-cd apps\hub
-cargo test --target x86_64-pc-windows-gnu
-
-.\scripts\smoke.ps1
+python companions\windows\server.py --hub http://localhost:3000 --base-url http://host.docker.internal:9876
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`): Agent pytest + Hub `cargo test` on Ubuntu. The Hub job sets `RUSTUP_TOOLCHAIN` / `CARGO_BUILD_TARGET` because `apps/hub/rust-toolchain.toml` and `.cargo/config.toml` pin windows-gnu for local dev — env wins over both, so don't drop it. Compose smoke is not in CI (image build is too heavy). After `docker compose up -d`, run `.\scripts\smoke.ps1` or `make smoke`.
+## Where it runs
 
-## curl scratchpad
+| Setting | What you need |
+|---------|----------------|
+| Everyday demo | One PC with Docker; no GPU |
+| Natural language | Optional: Ollama on the machine, or a cloud LLM key |
+| Lab / HPC | Linux Singularity/Apptainer (`deploy/singularity`); not for Windows |
+| Without Compose | Run Hub, Agent, and UI as host processes |
 
-```bash
-curl -s http://localhost:3000/api/v1/health
-curl -s http://localhost:3000/api/v1/devices
-curl -s -X POST http://localhost:3000/api/v1/devices/light.faker_esp32_light/actions \
-  -H "Content-Type: application/json" -d "{\"action\":\"turn_on\"}"
-curl -s http://localhost:3000/mcp/tools
+Stack, one line: **Next.js console → Rust Hub → Python Agent**. Companions are small HTTP listeners on Windows and Android.
+
+## How the pieces split
+
+```
+You (browser / a sentence)
+        ↓
+Console UI
+        ↓
+Hub  — device book, scenes, companions, tool catalog for the Agent
+   ↓                         ↓
+Home adapters              PC / phone Companion
+(HA or demo stubs)         (Hub HTTP only)
 ```
 
-MQTT demo light (HA path, entity `light.demo_esp32_light`): in HA add MQTT broker `mosquitto:1883`, then `deploy/docker/homeassistant/publish_demo_states.ps1`.
+The Agent (optional LLM) only asks the Hub “which tools exist, run this.” It does not speak bulb protocols or OS APIs.
+
+## Repository map
+
+| Path | Role |
+|------|------|
+| `apps/ui` | Console |
+| `apps/hub` | Hub: devices, scenes, companions, MCP |
+| `apps/agent` | Natural language and tool orchestration |
+| `companions/` | Windows / Android agents |
+| `deploy/docker` | Day-to-day demo compose |
+| `config/` | Scenes and service config |
+
+## FAQ
+
+**Do I need Home Assistant?**  
+No. Stubs are enough to walk the UI, Agent, and scenes. Enable HA when you have real hardware.
+
+**Do I need a GPU?**  
+No. The console and Hub do not. A local LLM is optional; keywords work without one.
+
+**I locked Windows from the UI. How do I get back?**  
+Use the Windows password (or PIN). LanIoT cannot unlock the session.
+
+**Can this drive a real Xiaomi bulb or Gree AC?**  
+Yes, through Home Assistant integrations (`xiaomi_miot`, `gree`, MQTT ESP32). Hub code does not fork per brand. Set `SEED_FAKER_DEVICES=0` if you only want live HA.
+
+**Does the Agent talk to HA?**  
+No. `HUB_MCP_URL` / Hub REST only.
+
+## Status
+
+Open-source **demo prototype**. Forced auth stays off by default. Review what you expose before putting this on a real home LAN.
