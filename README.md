@@ -133,4 +133,4 @@ Then Ping or Notify from the console. Skip Lock unless you mean it.
 | `config/` | Scenes and service config |
 | `assets/` | README figures |
 
-Open-source **demo prototype** (v0.8.1). Review what you expose before this sits on a real home LAN.
+Open-source **demo prototype** (v0.8.2). Review what you expose before this sits on a real home LAN.
