@@ -1,6 +1,6 @@
 # LanIoT
 
-<p><img src="https://img.shields.io/badge/Next.js-15.1-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 15.1" /> <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" /> <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat-square&logo=rust&logoColor=000" alt="Rust stable" /> <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.0" /> <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose" /> <img src="https://img.shields.io/badge/MQTT-Mosquitto%202-660066?style=flat-square" alt="MQTT Mosquitto 2" /></p>
+<p><img src="https://img.shields.io/badge/Next.js-15.1-000000?style=flat&logo=nextdotjs&logoColor=white" alt="Next.js 15.1" /> <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.11+" /> <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat&logo=rust&logoColor=000" alt="Rust stable" /> <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=flat&logo=kotlin&logoColor=white" alt="Kotlin 2.0" /> <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker Compose" /> <img src="https://img.shields.io/badge/MQTT-Mosquitto%202-660066?style=flat" alt="MQTT Mosquitto 2" /></p>
 
 **A LAN-first console for the home: one sentence or one tap to switch lights, set the AC, run a scene, notify a PC, or lock it.**
 
@@ -69,7 +69,7 @@ This is a **demo prototype**, not a consumer cloud app and not a Home Assistant 
 - Completions leave the LAN only if **you** point the LLM at a cloud provider. Local Ollama stays on-site.
 - **Companion Lock really locks Windows.** There is no Unlock here — use the OS password. Dry runs: `COMPANION_DRY_RUN=1`. Do not click Lock on a shared demo machine unless that is the point.
 
-## Try it (Docker)
+## How to start with Docker
 
 An empty `HA_TOKEN` is fine — you get in-memory demo devices.
 
@@ -121,7 +121,7 @@ Then Ping or Notify from the console. Skip Lock unless you mean it.
 
 **Does the Agent talk to HA?** No. Hub MCP/REST only.
 
-## Repository
+**Where is what in the repo?**
 
 | Path | Role |
 |------|------|
@@ -131,6 +131,3 @@ Then Ping or Notify from the console. Skip Lock unless you mean it.
 | `companions/` | Windows / Android |
 | `deploy/docker` | Everyday compose |
 | `config/` | Scenes and service config |
-| `assets/` | README figures |
-
-Open-source **demo prototype** (v0.8.2). Review what you expose before this sits on a real home LAN.
