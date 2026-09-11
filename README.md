@@ -1,6 +1,6 @@
 # LanIoT
 
-<p><img src="https://img.shields.io/badge/Next.js-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" /> <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" /> <img src="https://img.shields.io/badge/Rust-DEA584?style=flat-square&logo=rust&logoColor=000" alt="Rust" /> <img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" /> <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" /> <img src="https://img.shields.io/badge/MQTT-660066?style=flat-square" alt="MQTT" /></p>
+<p><img src="https://img.shields.io/badge/Next.js-15.1-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 15.1" /> <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" /> <img src="https://img.shields.io/badge/Rust-stable-DEA584?style=flat-square&logo=rust&logoColor=000" alt="Rust stable" /> <img src="https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.0" /> <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose" /> <img src="https://img.shields.io/badge/MQTT-Mosquitto%202-660066?style=flat-square" alt="MQTT Mosquitto 2" /></p>
 
 **A LAN-first console for the home: one sentence or one tap to switch lights, set the AC, run a scene, notify a PC, or lock it.**
 
