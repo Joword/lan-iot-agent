@@ -14,6 +14,7 @@ from lan_iot_agent.tools.hub import HubCallResult
 from lan_iot_agent.tools.keywords import (
     DEFAULT_CLIMATE_ENTITY,
     DEFAULT_COMPANION_ID,
+    DEFAULT_ROBOT_ID,
     PENDING_ACTION_SHUTDOWN_ALL,
     detect_dangerous_intent,
     infer_tools_from_message,
@@ -245,6 +246,30 @@ def test_keyword_tools() -> None:
     explicit = infer_tools_from_message("notify companion.office_pc")
     assert explicit and explicit[0]["arguments"]["device_id"] == "companion.office_pc"
     assert explicit[0]["arguments"]["command"] == "notify"
+    for phrase, command in (
+        ("ping robot", "ping"),
+        ("机器人", "ping"),
+        ("stop robot", "stop"),
+        ("停止机器人", "stop"),
+        ("dock robot", "dock"),
+        ("机器人回充", "dock"),
+        ("start robot", "start"),
+    ):
+        tools = infer_tools_from_message(phrase)
+        assert tools and tools[0]["name"] == "companion.command", phrase
+        assert tools[0]["arguments"]["device_id"] == DEFAULT_ROBOT_ID, phrase
+        assert tools[0]["arguments"]["command"] == command, phrase
+    preferred_robot = infer_tools_from_message(
+        "dock robot",
+        devices=[{"id": "robot.hall", "kind": "robot"}],
+    )
+    assert preferred_robot
+    assert preferred_robot[0]["arguments"]["device_id"] == "robot.hall"
+    assert preferred_robot[0]["arguments"]["command"] == "dock"
+    explicit_robot = infer_tools_from_message("stop robot.lan_demo")
+    assert explicit_robot
+    assert explicit_robot[0]["arguments"]["device_id"] == "robot.lan_demo"
+    assert explicit_robot[0]["arguments"]["command"] == "stop"
 
 
 def test_dangerous_intent_detection() -> None:

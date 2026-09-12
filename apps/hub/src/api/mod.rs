@@ -3,6 +3,7 @@
 pub mod companions;
 pub mod devices;
 pub mod health;
+pub mod lan;
 pub mod scenes;
 pub mod ws;
 
@@ -16,6 +17,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .merge(health::routes())
         .merge(devices::routes())
         .merge(companions::routes())
+        .merge(lan::routes())
         .merge(scenes::routes())
         .merge(crate::auth::routes())
         .merge(ws::routes())

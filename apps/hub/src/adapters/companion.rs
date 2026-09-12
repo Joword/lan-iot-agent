@@ -1,7 +1,7 @@
 //! Companion adapter (P6).
 //!
-//! Registry of Companion devices (phone/PC). Hub POSTs commands to each
-//! device's `base_url` — HA does not manage this path.
+//! Registry of Companion devices (phone / PC / robot). Hub POSTs commands to
+//! each device's `base_url` — HA does not manage this path.
 //!
 //! On startup: load collection `companions` from the shared Mongo store. If
 //! empty, seed `companion.demo_pc` → `http://127.0.0.1:9876` until the
@@ -23,14 +23,14 @@ use tokio::sync::RwLock;
 
 use crate::mongo::MongoStore;
 
-/// Registered Companion endpoint (phone / PC agent).
+/// Registered Companion endpoint (phone / PC / robot).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanionDevice {
     pub id: String,
     pub name: String,
     /// Base URL of the Companion HTTP listener (Hub POSTs `{base}/command`).
     pub base_url: String,
-    /// `pc` | `phone` | …
+    /// `pc` | `phone` | `robot` | `chip` (R&D hook)
     pub kind: String,
 }
 

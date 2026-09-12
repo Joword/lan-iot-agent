@@ -319,7 +319,7 @@ fn tool_catalog() -> Vec<Value> {
         ),
         tool_def(
             "companion.command",
-            "Send a command to a Companion device (phone/PC) via Hub HTTP. Demo: companion.demo_pc may be offline.",
+            "Send a command to a Companion device (phone/PC/robot) via Hub HTTP. Demo: companion.demo_pc may be offline.",
             json!({
                 "type": "object",
                 "required": ["device_id", "command"],
@@ -330,7 +330,7 @@ fn tool_catalog() -> Vec<Value> {
                     },
                     "command": {
                         "type": "string",
-                        "description": "Command string forwarded to Companion POST /command (ping, notify, lock, …)"
+                        "description": "Command string forwarded to Companion POST /command (ping, notify, lock, stop, dock, start, …)"
                     },
                     "title": {
                         "type": "string",

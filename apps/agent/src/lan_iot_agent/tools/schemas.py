@@ -140,11 +140,11 @@ _COMPANION_COMMAND_PARAMS: dict[str, Any] = {
     "properties": {
         "device_id": {
             "type": "string",
-            "description": "Companion id, e.g. companion.demo_pc",
+            "description": "Companion id, e.g. companion.demo_pc or robot.lan_demo",
         },
         "command": {
             "type": "string",
-            "description": "Command forwarded to Companion (ping, notify, lock, …)",
+            "description": "Command forwarded to Companion (ping, notify, lock, stop, dock, start, …)",
         },
         "title": {
             "type": "string",
@@ -199,7 +199,7 @@ _HUB_TOOL_DEFS: tuple[tuple[str, str, dict[str, Any]], ...] = (
     ),
     (
         "companion.command",
-        "Send a command to a Companion device (phone/PC) via Hub.",
+        "Send a command to a Companion device (phone/PC/robot) via Hub.",
         _COMPANION_COMMAND_PARAMS,
     ),
 )

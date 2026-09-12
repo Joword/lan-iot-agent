@@ -16,6 +16,9 @@ DEFAULT_XIAOMI_LIGHT = "light.faker_xiaomi_bulb"
 DEFAULT_COMPANION_ID = "companion.demo_pc"
 _DEFAULT_COMPANION_COMMAND = "ping"
 
+# LAN robot on the same Hub HTTP as Companion (`kind=robot`).
+DEFAULT_ROBOT_ID = "robot.lan_demo"
+
 _LIST_DEVICES_RE = re.compile(
     r"(list\s+devices|show\s+devices|设备列表|有哪些设备|列出设备|what\s+devices)",
     re.IGNORECASE,
@@ -113,6 +116,14 @@ _COMPANION_INTENT_RE = re.compile(
 )
 # Explicit companion id in message: companion.demo_pc
 _COMPANION_ID_RE = re.compile(r"\b(companion\.[\w]+)\b", re.IGNORECASE)
+
+# companion.command — robot already on the LAN / 机器人回充 / 停止机器人
+_ROBOT_ID_RE = re.compile(r"\b(robot\.[\w]+)\b", re.IGNORECASE)
+_ROBOT_INTENT_RE = re.compile(r"(?:\brobot\b|机器人)", re.IGNORECASE)
+_ROBOT_STOP_RE = re.compile(r"(?:\b(?:stop|halt|estop)\b|停止|急停)", re.IGNORECASE)
+_ROBOT_DOCK_RE = re.compile(r"(?:\b(?:dock|home|return)\b|回充|回巢|回坞)", re.IGNORECASE)
+_ROBOT_START_RE = re.compile(r"(?:\b(?:start|go|clean)\b|开始|清扫)", re.IGNORECASE)
+_ROBOT_PING_RE = re.compile(r"\bping\b", re.IGNORECASE)
 
 # P5 dangerous mass-off intents — require confirm:true before MCP turn_off fan-out.
 PENDING_ACTION_SHUTDOWN_ALL = "shutdown_all"
@@ -240,6 +251,25 @@ def resolve_companion_id(devices: list[Any] | None = None) -> str:
             if kind in {"companion", "pc", "phone"} and entity_id:
                 return entity_id
     return DEFAULT_COMPANION_ID
+
+
+def resolve_robot_id(devices: list[Any] | None = None) -> str:
+    """Prefer a ``robot.*`` / ``kind=robot`` id from context; else demo stub."""
+    for device in devices or []:
+        entity_id = entity_id_of(device)
+        if entity_id and entity_id.lower().startswith("robot."):
+            return entity_id
+        if isinstance(device, dict):
+            for key in ("device_id", "id"):
+                val = device.get(key)
+                if isinstance(val, str) and val.lower().startswith("robot."):
+                    return val
+            kind = str(
+                device.get("kind") or device.get("type") or device.get("domain") or ""
+            ).lower()
+            if kind == "robot" and entity_id:
+                return entity_id
+    return DEFAULT_ROBOT_ID
 
 
 def _extract_temperature(text: str) -> float | None:
@@ -383,6 +413,24 @@ def infer_tools_from_message(
             "devices.control",
             {"entity_id": entity_id, "action": action.lower(), "params": {}},
         )
+
+    # Robot already on the LAN (before PC companion so "机器人" is not lost).
+    if _ROBOT_INTENT_RE.search(text) or _ROBOT_ID_RE.search(text):
+        if _ROBOT_STOP_RE.search(text):
+            robot_command = "stop"
+        elif _ROBOT_DOCK_RE.search(text):
+            robot_command = "dock"
+        elif _ROBOT_START_RE.search(text):
+            robot_command = "start"
+        elif _ROBOT_PING_RE.search(text):
+            robot_command = "ping"
+        else:
+            robot_command = "ping"
+        if m := _ROBOT_ID_RE.search(text):
+            robot_id = m.group(1)
+        else:
+            robot_id = resolve_robot_id(devices)
+        _add("companion.command", {"device_id": robot_id, "command": robot_command})
 
     # Companion stubs (after device toggles so light.* phrases stay lights.control).
     companion_command: str | None = None

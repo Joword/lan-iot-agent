@@ -9,6 +9,7 @@ from lan_iot_agent.tools.hub import (
 from lan_iot_agent.tools.keywords import (
     DEFAULT_CLIMATE_ENTITY,
     DEFAULT_COMPANION_ID,
+    DEFAULT_ROBOT_ID,
     PENDING_ACTION_SHUTDOWN_ALL,
     detect_dangerous_intent,
     entity_id_of,
@@ -16,6 +17,7 @@ from lan_iot_agent.tools.keywords import (
     is_controllable_entity,
     resolve_climate_entity,
     resolve_companion_id,
+    resolve_robot_id,
     wants_device_list,
 )
 from lan_iot_agent.tools.mcp import (
@@ -38,6 +40,7 @@ __all__ = [
     "allowed_llm_tools",
     "DEFAULT_CLIMATE_ENTITY",
     "DEFAULT_COMPANION_ID",
+    "DEFAULT_ROBOT_ID",
     "KNOWN_TOOLS",
     "PENDING_ACTION_SHUTDOWN_ALL",
     "HubCallResult",
@@ -56,6 +59,7 @@ __all__ = [
     "refresh_hub_tool_schemas",
     "resolve_climate_entity",
     "resolve_companion_id",
+    "resolve_robot_id",
     "tools_from_hub_catalog",
     "wants_device_list",
 ]

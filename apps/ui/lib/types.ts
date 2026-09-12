@@ -103,7 +103,7 @@ export type PairResponse = {
   expires_in: number;
 };
 
-/** Hub Companion registry entry (phone / PC via Hub HTTP). */
+/** Hub Companion registry: PC/phone/robot product path; `kind=chip` is an R&D hook. */
 export type Companion = {
   id: string;
   name: string;
@@ -111,8 +111,17 @@ export type Companion = {
   kind: string;
 };
 
-export type CompanionListResponse = {
-  companions: Companion[];
+export type LanEndpoint = {
+  id: string;
+  name: string;
+  kind: string;
+  base_url: string;
+  commands?: string[];
+  adopted: boolean;
+};
+
+export type LanScanResponse = {
+  devices: LanEndpoint[];
   count: number;
 };
 

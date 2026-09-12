@@ -41,8 +41,13 @@ class CommandServer(
                     Response.Status.OK,
                     JSONObject()
                         .put("ok", true)
+                        .put("lan_iot", true)
                         .put("service", "companion.android")
+                        .put("kind", "phone")
+                        .put("id", "companion.android")
+                        .put("name", "Android phone")
                         .put("port", listeningPort)
+                        .put("commands", JSONArray(listOf("ping", "notify", "lock")))
                         .put("locked", locked)
                         .put("last_notify", lastNotify)
                         .put("device_admin", isDeviceAdmin()),

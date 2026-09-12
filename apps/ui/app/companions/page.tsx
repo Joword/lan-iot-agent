@@ -8,6 +8,8 @@ import type {
   CompanionCommandResult,
   CompanionListResponse,
   HubErrorBody,
+  LanEndpoint,
+  LanScanResponse,
 } from "../../lib/types";
 
 type CommandState = {
@@ -44,6 +46,10 @@ export default function CompanionsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState<string | null>(null);
+  const [lanFound, setLanFound] = useState<LanEndpoint[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [adopting, setAdopting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,6 +175,60 @@ export default function CompanionsPage() {
     }
   }
 
+  async function scanLan() {
+    setScanning(true);
+    setScanError(null);
+    try {
+      const res = await fetch(`${HUB_URL}/api/v1/lan/scan`, {
+        method: "POST",
+        headers: hubAuthHeaders(),
+      });
+      if (!res.ok) {
+        throw new Error(await readHubError(res));
+      }
+      const json = (await res.json()) as LanScanResponse;
+      setLanFound(Array.isArray(json.devices) ? json.devices : []);
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : "Scan failed");
+      setLanFound([]);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function adoptLan(ep: LanEndpoint) {
+    setAdopting(ep.base_url);
+    setScanError(null);
+    try {
+      const res = await fetch(`${HUB_URL}/api/v1/lan/adopt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...hubAuthHeaders(),
+        },
+        body: JSON.stringify({
+          base_url: ep.base_url,
+          id: ep.id,
+          name: ep.name,
+          kind: ep.kind,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(await readHubError(res));
+      }
+      await load();
+      setLanFound((prev) =>
+        prev.map((item) =>
+          item.base_url === ep.base_url ? { ...item, adopted: true } : item,
+        ),
+      );
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : "Adopt failed");
+    } finally {
+      setAdopting(null);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       <div className="mb-8 flex items-end justify-between gap-4">
@@ -177,10 +237,11 @@ export default function CompanionsPage() {
             Companions
           </h1>
           <p className="text-sm text-[var(--muted)]">
-            Hub HTTP companions (phone / PC). Start{" "}
-            <code className="text-xs">companions/windows/server.py</code> so
-            this PC auto-registers; then Ping / Notify / Lock. Lock really
-            locks the session and cannot be undone from this UI (no unlock).
+            Control PCs, phones, and robots already listening on the
+            LAN. Scan finds health on 9876 / 9877 / 9879. Lock really
+            locks Windows (no unlock here). Port 9878 is an{" "}
+            <strong>R&D chip hook</strong> for later firmware — not a
+            home device type.
           </p>
         </div>
         <button
@@ -192,6 +253,75 @@ export default function CompanionsPage() {
           Refresh
         </button>
       </div>
+
+      <section className="mb-10 rounded border border-[var(--border)] bg-[var(--surface)] px-4 py-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">On this LAN</p>
+            <p className="text-xs text-[var(--muted)]">
+              POST {HUB_URL}/api/v1/lan/scan · PC / phone / robot.
+              Chip on :9878 is the firmware R&D contract only.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void scanLan()}
+            disabled={scanning}
+            className="shrink-0 rounded border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          >
+            {scanning ? "Scanning…" : "Scan LAN"}
+          </button>
+        </div>
+        {scanError ? (
+          <p className="mb-2 text-sm text-[var(--danger)]">{scanError}</p>
+        ) : null}
+        {lanFound.length === 0 && !scanning ? (
+          <p className="text-sm text-[var(--muted)]">
+            No Companion listeners yet. Start{" "}
+            <code className="text-xs">companions/windows/server.py</code>{" "}
+            or{" "}
+            <code className="text-xs">companions/robot/server.py</code>,
+            then scan. Hub in Docker:{" "}
+            <code className="text-xs">LAN_SCAN_HOSTS=host.docker.internal</code>
+            . A chip on :9878 is optional R&D, not required for the demo.
+          </p>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {lanFound.map((ep) => (
+              <li
+                key={ep.base_url}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {ep.name}
+                    {ep.kind === "chip" ? (
+                      <span className="ml-2 text-xs font-normal text-[var(--muted)]">
+                        R&D hook
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="font-mono text-xs text-[var(--muted)]">
+                    {ep.kind} · {ep.id} · {ep.base_url}
+                  </p>
+                </div>
+                {ep.adopted ? (
+                  <span className="text-xs text-[var(--muted)]">adopted</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void adoptLan(ep)}
+                    disabled={adopting === ep.base_url}
+                    className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                  >
+                    {adopting === ep.base_url ? "Adopting…" : "Adopt"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <form
         onSubmit={(e) => void registerCompanion(e)}
@@ -329,7 +459,14 @@ export default function CompanionsPage() {
                   className="flex flex-wrap items-start justify-between gap-4 py-4"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{c.name}</p>
+                    <p className="font-medium">
+                      {c.name}
+                      {c.kind === "chip" ? (
+                        <span className="ml-2 text-xs font-normal text-[var(--muted)]">
+                          R&D hook
+                        </span>
+                      ) : null}
+                    </p>
                     <p className="font-mono text-xs text-[var(--muted)]">
                       {c.id}
                     </p>
@@ -350,27 +487,91 @@ export default function CompanionsPage() {
                         ? "Sending…"
                         : "Ping"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void sendCommand(c.id, "notify", {
-                          title: "LanIoT",
-                          body: "Hello from the Hub UI",
-                        })
-                      }
-                      disabled={cmd?.loading === true && cmd.companionId === c.id}
-                      className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
-                    >
-                      Notify
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void sendCommand(c.id, "lock")}
-                      disabled={cmd?.loading === true && cmd.companionId === c.id}
-                      className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
-                    >
-                      Lock
-                    </button>
+                    {c.kind === "chip" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "turn_on")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          On
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "turn_off")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Off
+                        </button>
+                      </>
+                    ) : c.kind === "robot" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "stop")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Stop
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "dock")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Dock
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "start")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Start
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void sendCommand(c.id, "notify", {
+                              title: "LanIoT",
+                              body: "Hello from the Hub UI",
+                            })
+                          }
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Notify
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendCommand(c.id, "lock")}
+                          disabled={
+                            cmd?.loading === true && cmd.companionId === c.id
+                          }
+                          className="rounded border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--fg)] hover:border-[var(--accent)] disabled:opacity-50"
+                        >
+                          Lock
+                        </button>
+                      </>
+                    )}
                   </div>
                 </li>
               ))}

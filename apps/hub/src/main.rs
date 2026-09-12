@@ -8,6 +8,7 @@ mod api;
 mod auth;
 mod config;
 mod events;
+mod lan;
 mod mcp;
 mod mongo;
 mod registry;

@@ -7,7 +7,7 @@
 //! - `ha`: Home Assistant REST/WS
 //! - `faker`: in-memory brand stubs for offline demos
 //! - `agent`: Python Agent HTTP (chat forward from Hub WS)
-//! - `companion`: Companion devices via Hub HTTP (not a DeviceAdapter)
+//! - `companion`: Companion devices (PC / phone / robot) via Hub HTTP (not a DeviceAdapter)
 
 pub mod agent;
 pub mod companion;

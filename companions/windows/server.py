@@ -33,6 +33,11 @@ logging.basicConfig(
 log = logging.getLogger("companion.windows")
 
 # Last notify / lock for Hub to inspect via ping response.
+IDENTITY: dict[str, Any] = {
+    "id": "companion.demo_pc",
+    "name": "Demo PC",
+    "kind": "pc",
+}
 _STATE: dict[str, Any] = {
     "last_command": None,
     "last_notify": None,
@@ -335,8 +340,13 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 200,
                 {
                     "ok": True,
+                    "lan_iot": True,
                     "service": "companion.windows",
+                    "kind": str(IDENTITY.get("kind") or "pc"),
+                    "id": str(IDENTITY.get("id") or "companion.demo_pc"),
+                    "name": str(IDENTITY.get("name") or "Demo PC"),
                     "port": PORT,
+                    "commands": ["ping", "notify", "lock"],
                     "locked": bool(_STATE["locked"]),
                 },
             )
@@ -462,10 +472,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     """Start the ThreadingHTTPServer Companion listener, then register on Hub."""
-    global BIND_HOST, PORT  # pylint: disable=global-statement
+    global BIND_HOST, PORT, IDENTITY  # pylint: disable=global-statement
     args = parse_args(argv)
     BIND_HOST = args.host
     PORT = args.port
+    IDENTITY = {"id": args.id, "name": args.name, "kind": args.kind}
 
     advertise = advertise_base_url(args.hub, PORT, args.base_url)
     server = ThreadingHTTPServer((BIND_HOST, PORT), CompanionHandler)
